@@ -1,0 +1,9 @@
+.git
+.venv
+.pytest_cache
+__pycache__
+*.py[cod]
+.env
+data/qdrant_db
+evals/results
+.DS_Store

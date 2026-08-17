@@ -82,6 +82,16 @@ Open:
 - API documentation: <http://127.0.0.1:8000/docs>
 - Health check: <http://127.0.0.1:8000/health>
 
+### Docker Compose
+
+After preparing `.env` and building `data/qdrant_db`, start both services with:
+
+```bash
+docker compose up --build
+```
+
+The API owns the embedded Qdrant directory; the UI reaches it through the internal Compose network. The first start can take several minutes while embedding and reranker models are downloaded into the shared model cache.
+
 ## API
 
 `GET /api/v1/metadata` returns data-driven filter options and counts.
@@ -173,20 +183,22 @@ Every response records:
 - selected review IDs and applied filters;
 - generation status (`completed`, `degraded`, or `skipped_no_evidence`).
 
+API access logs are emitted as JSON lines with request ID, method, path, status code, and duration. The same request ID is returned in the `X-Request-ID` response header for troubleshooting.
+
 ## Current limitations
 
 - The Qdrant database is local and supports one process at a time.
 - User-facing answer translation is generated on demand; annotation translations are cached locally to avoid repeated Gemini usage.
 - Evidence sufficiency is prompt-guided; a calibrated reranker threshold is planned.
-- The regression suite validates contracts and filter correctness; the 241-pair candidate pool still needs human verification for defensible retrieval metrics.
+- The retrieval benchmark currently covers 15 questions and 241 human-verified query/review pairs; broader domain coverage and confidence intervals are still needed.
 - The application has no authentication or multi-tenant isolation yet.
 
 ## Roadmap
 
-1. Label retrieval relevance for 30–50 evaluation questions.
-2. Compare dense-only, hybrid RRF, and hybrid + reranker pipelines.
+1. Expand retrieval relevance coverage from 15 to 30–50 questions.
+2. Add bootstrap confidence intervals and latency percentiles.
 3. Calibrate evidence thresholds and unsupported-question behavior.
-4. Add structured request logging and Docker deployment.
+4. Deploy the Dockerized application to a public cloud endpoint.
 
 ## Repository structure
 

@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 import logging
 from time import perf_counter
+from uuid import uuid4
 
 from fastapi import FastAPI, Request
 
@@ -14,8 +15,10 @@ from app.schemas import (
 )
 from app.services.gemini_service import GeminiService
 from app.services.rag_service import RagService
+from app.logging_config import configure_logging
 
 
+configure_logging()
 logger = logging.getLogger(__name__)
 
 
@@ -36,6 +39,29 @@ app = FastAPI(
     version="0.3.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def log_request(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or str(uuid4())
+    started = perf_counter()
+    status_code = 500
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        response.headers["X-Request-ID"] = request_id
+        return response
+    finally:
+        logger.info(
+            "request_completed",
+            extra={
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": status_code,
+                "duration_ms": round((perf_counter() - started) * 1000, 2),
+            },
+        )
 
 
 @app.get("/health")

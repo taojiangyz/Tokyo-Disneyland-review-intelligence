@@ -1,6 +1,6 @@
 PYTHON ?= .venv/bin/python
 
-.PHONY: validate-data prepare-data rebuild-index test regression annotation-pool evaluate-retrieval translations run-api run-ui run-annotation
+.PHONY: validate-data prepare-data rebuild-index test regression annotation-pool evaluate-retrieval translations run-api run-ui run-annotation docker-up docker-down
 
 validate-data:
 	$(PYTHON) src/prepare_data.py --validate-only
@@ -34,3 +34,9 @@ run-ui:
 
 run-annotation:
 	.venv/bin/streamlit run annotation_app.py --server.port 8502
+
+docker-up:
+	docker compose up --build
+
+docker-down:
+	docker compose down

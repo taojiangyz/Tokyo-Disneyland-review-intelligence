@@ -10,8 +10,9 @@ from dotenv import load_dotenv
 from google import genai
 
 
-API_URL = "http://127.0.0.1:8000/api/v1/analyze"
-METADATA_URL = "http://127.0.0.1:8000/api/v1/metadata"
+API_BASE_URL = os.getenv("ALADDIN_API_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+API_URL = f"{API_BASE_URL}/api/v1/analyze"
+METADATA_URL = f"{API_BASE_URL}/api/v1/metadata"
 HERO_IMAGE = Path("assets/tokyo_disney_ai_hero.png")
 
 DEFAULT_QUESTION = (

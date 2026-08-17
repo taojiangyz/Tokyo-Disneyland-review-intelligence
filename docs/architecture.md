@@ -23,6 +23,7 @@
 | Streamlit | Business question, filters, summary, evidence inspection |
 | Regression runner | Repeatable behavior and filter-contract checks |
 | Retrieval evaluator | Candidate pooling, human labels, Recall/MRR/nDCG and latency comparison |
+| JSON access logger | Request correlation, HTTP status, and end-to-end request duration |
 
 ## Why hybrid retrieval
 
@@ -44,6 +45,10 @@ Dense retrieval helps when the user's wording differs from the review. Sparse re
 - Index replacement requires `--yes`, and the destination must be inside the project directory.
 - Secrets and the generated vector database are excluded from Git.
 
-## Next evaluation layer
+## Evaluation status
 
-The current 20-case suite tests API contracts, filter compliance, evidence counts, citation containment, graceful degradation, and multilingual execution. The next layer will add human-labeled relevant review IDs and calculate Recall@K, MRR, nDCG, citation precision, latency, and cost across three retrieval configurations.
+The 20-case regression suite tests API contracts, filter compliance, evidence counts, citation containment, graceful degradation, and multilingual execution. A separate benchmark contains 241 human-verified judgments over 15 questions and reports Recall@10, MRR@10, nDCG@10, and latency across dense, hybrid RRF, and reranked configurations. The next layer expands question coverage, adds confidence intervals, and separates warm-up from steady-state latency.
+
+## Container topology
+
+Docker Compose runs one FastAPI container and one Streamlit container. Only FastAPI opens the embedded Qdrant directory; Streamlit calls FastAPI over HTTP. This ownership boundary prevents the file-lock conflict caused by opening local Qdrant storage from multiple processes.
