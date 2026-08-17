@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 from qdrant_client import models
 
-from app.schemas import AnalyzeRequest
+from app.schemas import AnalyzeRequest, RetrieveRequest
 from app.services.rag_service import build_filter, to_sparse_vector
 
 
@@ -55,3 +55,14 @@ def test_sparse_vector_is_sorted_by_token_id() -> None:
 
     assert vector.indices == [2, 9]
     assert vector.values == [0.8, 0.4]
+
+
+def test_retrieve_request_accepts_supported_modes() -> None:
+    for mode in ("dense", "hybrid", "hybrid_rerank"):
+        request = RetrieveRequest(query="Queue complaints", mode=mode)
+        assert request.mode == mode
+
+
+def test_retrieve_request_rejects_unknown_mode() -> None:
+    with pytest.raises(ValidationError):
+        RetrieveRequest(query="Queue complaints", mode="unknown")

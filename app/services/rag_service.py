@@ -423,6 +423,108 @@ class RagService:
             "evidence_count_options": [3, 5, 10],
         }
 
+    def retrieve_for_evaluation(
+        self,
+        query: str,
+        mode: str,
+        regions: list[str] | None = None,
+        min_rating: int | None = None,
+        max_rating: int | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        limit: int = 10,
+    ):
+        if mode == "hybrid_rerank":
+            return self.search_and_rerank(
+                query=query,
+                regions=regions,
+                min_rating=min_rating,
+                max_rating=max_rating,
+                date_from=date_from,
+                date_to=date_to,
+                candidate_limit=max(20, limit),
+                final_limit=limit,
+            )
+
+        query_filter = build_filter(
+            regions=regions,
+            min_rating=min_rating,
+            max_rating=max_rating,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        embedding_start = perf_counter()
+        output = self.embedding_model.encode(
+            [query],
+            batch_size=1,
+            max_length=1024,
+            return_dense=True,
+            return_sparse=True,
+            return_colbert_vecs=False,
+        )
+        embedding_ms = (perf_counter() - embedding_start) * 1000
+        dense_query = output["dense_vecs"][0].tolist()
+        sparse_query = to_sparse_vector(output["lexical_weights"][0])
+        retrieval_start = perf_counter()
+
+        if mode == "dense":
+            points = self.client.query_points(
+                collection_name=COLLECTION_NAME,
+                query=dense_query,
+                using=DENSE_VECTOR_NAME,
+                query_filter=query_filter,
+                limit=limit,
+                with_payload=True,
+            ).points
+        elif mode == "hybrid":
+            prefetch_limit = max(20, limit)
+            points = self.client.query_points(
+                collection_name=COLLECTION_NAME,
+                prefetch=[
+                    models.Prefetch(
+                        query=dense_query,
+                        using=DENSE_VECTOR_NAME,
+                        limit=prefetch_limit,
+                        filter=query_filter,
+                    ),
+                    models.Prefetch(
+                        query=sparse_query,
+                        using=SPARSE_VECTOR_NAME,
+                        limit=prefetch_limit,
+                        filter=query_filter,
+                    ),
+                ],
+                query=models.FusionQuery(fusion=models.Fusion.RRF),
+                limit=limit,
+                with_payload=True,
+            ).points
+        else:
+            raise ValueError(f"Unsupported retrieval mode: {mode}")
+
+        retrieval_ms = (perf_counter() - retrieval_start) * 1000
+        results = [(point, float(point.score)) for point in points]
+        rank_trace = [
+            {
+                "review_id": str((point.payload or {}).get("review_id", "")),
+                "rank": rank,
+                "score": float(point.score),
+            }
+            for rank, point in enumerate(points, start=1)
+        ]
+        debug_info = {
+            "retrieval_mode": mode,
+            "hybrid_candidate_count": len(points),
+            "final_selected_count": len(points),
+            "reranking_trace": rank_trace,
+            "timing_ms": {
+                "embedding": round(embedding_ms, 2),
+                "retrieval": round(retrieval_ms, 2),
+                "reranking": 0.0,
+                "retrieval_pipeline": round(embedding_ms + retrieval_ms, 2),
+            },
+        }
+        return results, debug_info
+
     def search_and_rerank(
         self,
         query: str,

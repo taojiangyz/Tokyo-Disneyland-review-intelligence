@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -105,3 +106,34 @@ class MetadataResponse(BaseModel):
     min_date: date
     max_date: date
     evidence_count_options: list[int]
+
+
+class RetrieveRequest(BaseModel):
+    query: str = Field(min_length=3)
+    mode: Literal["dense", "hybrid", "hybrid_rerank"]
+    regions: list[str] = Field(default_factory=list)
+    min_rating: int | None = Field(default=None, ge=1, le=5)
+    max_rating: int | None = Field(default=None, ge=1, le=5)
+    date_from: date | None = None
+    date_to: date | None = None
+    top_k: int = Field(default=10, ge=1, le=50)
+
+    @model_validator(mode="after")
+    def validate_filters(self) -> "RetrieveRequest":
+        invalid_regions = set(self.regions) - {"CN", "HK", "KR"}
+        if invalid_regions:
+            invalid = ", ".join(sorted(invalid_regions))
+            raise ValueError(f"Unsupported market code(s): {invalid}")
+        if self.min_rating and self.max_rating and self.min_rating > self.max_rating:
+            raise ValueError("min_rating cannot exceed max_rating")
+        if self.date_from and self.date_to and self.date_from > self.date_to:
+            raise ValueError("date_from cannot be after date_to")
+        return self
+
+
+class RetrieveResponse(BaseModel):
+    query: str
+    mode: str
+    evidence: list[EvidenceItem]
+    filters: dict[str, object]
+    trace: dict[str, object]

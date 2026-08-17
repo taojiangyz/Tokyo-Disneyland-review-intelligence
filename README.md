@@ -102,6 +102,8 @@ Open:
 
 All filters are optional. An empty `regions` list searches every market.
 
+`POST /api/v1/retrieve` runs retrieval without calling Gemini. Set `mode` to `dense`, `hybrid`, or `hybrid_rerank`; this endpoint powers reproducible quality and latency experiments.
+
 ## Data pipeline
 
 Validate the raw data without writing files:
@@ -147,6 +149,16 @@ make regression
 ```
 
 Full runs call the configured Gemini model and may incur cost. Reports are written to `evals/results/latest.json` and are intentionally excluded from Git.
+
+Generate a pooled relevance-labeling file and compare all retrieval modes:
+
+```bash
+make annotation-pool
+# assign relevance grades 0, 1, or 2
+make evaluate-retrieval
+```
+
+The first two-query pipeline baseline is documented in [docs/retrieval-baseline.md](docs/retrieval-baseline.md). It is an engineering smoke baseline, not a final model-quality claim.
 
 ## Retrieval trace
 

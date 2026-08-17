@@ -9,6 +9,8 @@ from app.schemas import (
     AnalyzeResponse,
     EvidenceItem,
     MetadataResponse,
+    RetrieveRequest,
+    RetrieveResponse,
 )
 from app.services.gemini_service import GeminiService
 from app.services.rag_service import RagService
@@ -51,6 +53,57 @@ def health_check() -> dict[str, str]:
 def review_metadata(request: Request) -> dict[str, object]:
     rag_service: RagService = request.app.state.rag_service
     return rag_service.get_metadata()
+
+
+@app.post(
+    "/api/v1/retrieve",
+    response_model=RetrieveResponse,
+)
+def retrieve_reviews(
+    request_body: RetrieveRequest,
+    request: Request,
+) -> RetrieveResponse:
+    rag_service: RagService = request.app.state.rag_service
+    date_from = request_body.date_from.isoformat() if request_body.date_from else None
+    date_to = request_body.date_to.isoformat() if request_body.date_to else None
+    ranked_results, debug_info = rag_service.retrieve_for_evaluation(
+        query=request_body.query,
+        mode=request_body.mode,
+        regions=request_body.regions,
+        min_rating=request_body.min_rating,
+        max_rating=request_body.max_rating,
+        date_from=date_from,
+        date_to=date_to,
+        limit=request_body.top_k,
+    )
+    evidence = [
+        EvidenceItem(
+            review_id=str((point.payload or {}).get("review_id", "")),
+            region=(point.payload or {}).get("region"),
+            rating=(point.payload or {}).get("rating"),
+            review_date=(point.payload or {}).get("review_date"),
+            text=str((point.payload or {}).get("text", "")),
+            rrf_score=float(point.score),
+            reranker_score=(
+                float(score) if request_body.mode == "hybrid_rerank" else None
+            ),
+        )
+        for point, score in ranked_results
+    ]
+    filters = {
+        "regions": request_body.regions,
+        "min_rating": request_body.min_rating,
+        "max_rating": request_body.max_rating,
+        "date_from": date_from,
+        "date_to": date_to,
+    }
+    return RetrieveResponse(
+        query=request_body.query,
+        mode=request_body.mode,
+        evidence=evidence,
+        filters=filters,
+        trace=debug_info,
+    )
 
 
 @app.post(

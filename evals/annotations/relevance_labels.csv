@@ -1,0 +1,19 @@
+query_id,review_id,relevance,notes
+topic_waiting_en,cb83b0fb0b61a70a371b5bf7d0927898,2,Direct complaint about long waiting
+topic_waiting_en,48413b4c984b4c326144e144084af496,2,Direct complaint about excessive queue time
+topic_waiting_en,757996992ecd281e88aead36ac042873,2,Direct complaint about queue time
+topic_waiting_en,36cf8fb81c9e87c00ba9e05cfb744de7,2,Direct two-hour queue complaint
+topic_waiting_en,ad8f0ea3049d2b50010986657bb166e5,2,Direct two-hour queue complaint
+topic_waiting_en,628246494,0,No queue or waiting evidence
+topic_waiting_en,f672ae3a832af8528f5301abbdd1c800,0,QR entry convenience only
+topic_waiting_en,103ffd4c110ecf8c92a8b48d457e4301,2,Direct complaint about many people queueing
+topic_crowding_zh,3647e1f1599197835c35ca5210e73a1d,2,Direct crowding complaint
+topic_crowding_zh,84f1acdf647258f0e51fd33b49e19a8c,2,Direct crowding complaint and poor experience
+topic_crowding_zh,ab4e49aaf91afe7752194443c7a83cad,1,Queue evidence indirectly reflects crowding
+topic_crowding_zh,4c9f429d6f9d5f95a326a51784c8fccb,2,Direct too-many-people and queue evidence
+topic_crowding_zh,8967c9a702cd86e11715f3287e11d000,0,Large park and many attractions not crowding
+topic_crowding_zh,c0bc0cfe039ed1789687a6984d2b145f,1,Useful crowd and queue-management context
+topic_crowding_zh,4037843cf7144c638f32399cde008dbb,2,Direct crowding feedback
+topic_crowding_zh,406d3b0c2a85ed52be8ad03690056703,2,Direct counter-evidence that park was not crowded
+topic_crowding_zh,e11f3b10741548063a97ffc4cba5f977,2,Detailed crowding and long-queue complaint
+topic_crowding_zh,7aa9dba4dddbe7362c908bc43653aab3,2,Crowding feedback with management context

@@ -22,6 +22,7 @@
 | FastAPI | Validation, orchestration, response contract, trace |
 | Streamlit | Business question, filters, summary, evidence inspection |
 | Regression runner | Repeatable behavior and filter-contract checks |
+| Retrieval evaluator | Candidate pooling, human labels, Recall/MRR/nDCG and latency comparison |
 
 ## Why hybrid retrieval
 
