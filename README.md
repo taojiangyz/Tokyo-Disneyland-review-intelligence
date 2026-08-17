@@ -154,13 +154,14 @@ Generate a pooled relevance-labeling file and compare all retrieval modes:
 
 ```bash
 make annotation-pool
-# assign relevance grades 0, 1, or 2
+make run-annotation
+# open http://127.0.0.1:8502 and assign relevance grades 0, 1, or 2
 make evaluate-retrieval
 ```
 
 The first two-query pipeline baseline is documented in [docs/retrieval-baseline.md](docs/retrieval-baseline.md). It is an engineering smoke baseline, not a final model-quality claim.
 
-A 15-query pooled annotation set with 241 unique candidates is available at `evals/annotations/candidate_pool_15.csv`. Its blank `relevance` column is the next human-review task.
+A 15-query pooled annotation set with 241 unique candidates is available at `evals/annotations/candidate_pool_15.csv`. The annotation page displays original text plus cached Chinese translations for Korean reviews, saves progress after every decision, supports CSV export, and reports agreement with optional Codex suggestions. AI translations and suggestions are explicitly separated from human-verified labels.
 
 ## Retrieval trace
 
@@ -175,9 +176,9 @@ Every response records:
 ## Current limitations
 
 - The Qdrant database is local and supports one process at a time.
-- Translation is currently generated on demand and is not cached persistently.
+- User-facing answer translation is generated on demand; annotation translations are cached locally to avoid repeated Gemini usage.
 - Evidence sufficiency is prompt-guided; a calibrated reranker threshold is planned.
-- The regression suite validates contracts and filter correctness but still needs human relevance labels for Recall@K/MRR comparison.
+- The regression suite validates contracts and filter correctness; the 241-pair candidate pool still needs human verification for defensible retrieval metrics.
 - The application has no authentication or multi-tenant isolation yet.
 
 ## Roadmap
@@ -185,7 +186,7 @@ Every response records:
 1. Label retrieval relevance for 30–50 evaluation questions.
 2. Compare dense-only, hybrid RRF, and hybrid + reranker pipelines.
 3. Calibrate evidence thresholds and unsupported-question behavior.
-4. Add structured request logging, persistent translation caching, and Docker deployment.
+4. Add structured request logging and Docker deployment.
 
 ## Repository structure
 

@@ -45,7 +45,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate labeled retrieval results")
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     parser.add_argument("--cases", type=Path, default=Path("evals/regression_cases.jsonl"))
-    parser.add_argument("--labels", type=Path, default=Path("evals/annotations/relevance_labels.csv"))
+    parser.add_argument(
+        "--labels",
+        type=Path,
+        default=Path("evals/annotations/human_verified_relevance_labels.csv"),
+    )
     parser.add_argument("--output", type=Path, default=Path("evals/results/retrieval_metrics.json"))
     parser.add_argument("--top-k", type=int, default=10)
     return parser.parse_args()

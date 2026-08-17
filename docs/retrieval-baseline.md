@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This first baseline validates the end-to-end evaluation machinery. It is deliberately small: two manually labeled questions and pooled top-five candidates from Dense, Hybrid RRF, and Hybrid + Reranker. It must not be presented as a statistically reliable model comparison.
+This first baseline validates the end-to-end evaluation machinery. It is deliberately small: two questions with provisional Codex-suggested relevance labels and pooled top-five candidates from Dense, Hybrid RRF, and Hybrid + Reranker. These labels have not been human verified, so the table must not be presented as a statistically reliable model comparison or final quality claim.
 
 ## Initial results
 
@@ -14,6 +14,8 @@ This first baseline validates the end-to-end evaluation machinery. It is deliber
 | Hybrid + Reranker (20 candidates) | 0.639 | 1.000 | 0.927 | 6,768 ms |
 
 Environment: local Apple laptop, warm model process, two questions (`topic_waiting_en` and `topic_crowding_zh`), `k=5`. Latency includes query embedding; the reranked mode also includes cross-encoder scoring over 20 candidates.
+
+Label status: AI-assisted provisional baseline. Replace these metrics with results from `human_verified_relevance_labels.csv` after review.
 
 ## Interpretation
 
