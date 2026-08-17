@@ -159,7 +159,7 @@ make run-annotation
 make evaluate-retrieval
 ```
 
-The first two-query pipeline baseline is documented in [docs/retrieval-baseline.md](docs/retrieval-baseline.md). It is an engineering smoke baseline, not a final model-quality claim.
+The human-verified retrieval comparison is documented in [docs/retrieval-baseline.md](docs/retrieval-baseline.md): 241 judgments across 15 questions compare dense, hybrid RRF, and two reranker candidate-pool sizes.
 
 A 15-query pooled annotation set with 241 unique candidates is available at `evals/annotations/candidate_pool_15.csv`. The annotation page displays original text plus cached Chinese translations for Korean reviews, saves progress after every decision, supports CSV export, and reports agreement with optional Codex suggestions. AI translations and suggestions are explicitly separated from human-verified labels.
 
