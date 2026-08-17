@@ -7,7 +7,12 @@ from statistics import mean
 
 import requests
 
-MODES = ("dense", "hybrid", "hybrid_rerank")
+CONFIGURATIONS = {
+    "dense": {"mode": "dense", "candidate_limit": 20},
+    "hybrid": {"mode": "hybrid", "candidate_limit": 20},
+    "hybrid_rerank_10": {"mode": "hybrid_rerank", "candidate_limit": 10},
+    "hybrid_rerank_20": {"mode": "hybrid_rerank", "candidate_limit": 20},
+}
 
 
 def load_cases(path: Path) -> dict[str, dict]:
@@ -55,12 +60,18 @@ def main() -> None:
         raise SystemExit("No relevance labels found. Assign 0, 1, or 2 in the annotation CSV.")
 
     report = {"labeled_queries": len(labeled_queries), "top_k": args.top_k, "modes": {}}
-    for mode in MODES:
+    for configuration_name, configuration in CONFIGURATIONS.items():
         per_query = []
         for query_id in labeled_queries:
             case = cases[query_id]
-            payload = {"query": case["question"], "mode": mode, "top_k": args.top_k, **case["payload"]}
+            payload = {
+                "query": case["question"],
+                "top_k": args.top_k,
+                **configuration,
+                **case["payload"],
+            }
             payload["top_k"] = args.top_k
+            payload["candidate_limit"] = configuration["candidate_limit"]
             response = requests.post(f"{args.base_url}/api/v1/retrieve", json=payload, timeout=180)
             response.raise_for_status()
             data = response.json()
@@ -69,7 +80,7 @@ def main() -> None:
             metrics["query_id"] = query_id
             metrics["latency_ms"] = data["trace"]["timing_ms"]["retrieval_pipeline"]
             per_query.append(metrics)
-        report["modes"][mode] = {
+        report["modes"][configuration_name] = {
             "recall_at_k": mean(item["recall"] for item in per_query),
             "mrr_at_k": mean(item["mrr"] for item in per_query),
             "ndcg_at_k": mean(item["ndcg"] for item in per_query),

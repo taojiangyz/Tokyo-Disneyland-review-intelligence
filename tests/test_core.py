@@ -66,3 +66,19 @@ def test_retrieve_request_accepts_supported_modes() -> None:
 def test_retrieve_request_rejects_unknown_mode() -> None:
     with pytest.raises(ValidationError):
         RetrieveRequest(query="Queue complaints", mode="unknown")
+
+
+def test_retrieve_request_validates_candidate_limit() -> None:
+    request = RetrieveRequest(
+        query="Queue complaints",
+        mode="hybrid_rerank",
+        candidate_limit=10,
+    )
+    assert request.candidate_limit == 10
+
+    with pytest.raises(ValidationError):
+        RetrieveRequest(
+            query="Queue complaints",
+            mode="hybrid_rerank",
+            candidate_limit=2,
+        )

@@ -117,6 +117,7 @@ class RetrieveRequest(BaseModel):
     date_from: date | None = None
     date_to: date | None = None
     top_k: int = Field(default=10, ge=1, le=50)
+    candidate_limit: int = Field(default=20, ge=5, le=100)
 
     @model_validator(mode="after")
     def validate_filters(self) -> "RetrieveRequest":

@@ -102,7 +102,7 @@ Open:
 
 All filters are optional. An empty `regions` list searches every market.
 
-`POST /api/v1/retrieve` runs retrieval without calling Gemini. Set `mode` to `dense`, `hybrid`, or `hybrid_rerank`; this endpoint powers reproducible quality and latency experiments.
+`POST /api/v1/retrieve` runs retrieval without calling Gemini. Set `mode` to `dense`, `hybrid`, or `hybrid_rerank`; `candidate_limit` controls the hybrid/reranker candidate pool. This endpoint powers reproducible quality and latency experiments.
 
 ## Data pipeline
 
@@ -159,6 +159,8 @@ make evaluate-retrieval
 ```
 
 The first two-query pipeline baseline is documented in [docs/retrieval-baseline.md](docs/retrieval-baseline.md). It is an engineering smoke baseline, not a final model-quality claim.
+
+A 15-query pooled annotation set with 241 unique candidates is available at `evals/annotations/candidate_pool_15.csv`. Its blank `relevance` column is the next human-review task.
 
 ## Retrieval trace
 

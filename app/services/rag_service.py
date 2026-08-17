@@ -433,6 +433,7 @@ class RagService:
         date_from: str | None = None,
         date_to: str | None = None,
         limit: int = 10,
+        candidate_limit: int = 20,
     ):
         if mode == "hybrid_rerank":
             return self.search_and_rerank(
@@ -442,7 +443,7 @@ class RagService:
                 max_rating=max_rating,
                 date_from=date_from,
                 date_to=date_to,
-                candidate_limit=max(20, limit),
+                candidate_limit=max(candidate_limit, limit),
                 final_limit=limit,
             )
 
@@ -477,7 +478,7 @@ class RagService:
                 with_payload=True,
             ).points
         elif mode == "hybrid":
-            prefetch_limit = max(20, limit)
+            prefetch_limit = max(candidate_limit, limit)
             points = self.client.query_points(
                 collection_name=COLLECTION_NAME,
                 prefetch=[

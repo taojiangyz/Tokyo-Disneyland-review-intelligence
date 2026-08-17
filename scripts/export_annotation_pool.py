@@ -39,6 +39,7 @@ def main() -> None:
                 **case["payload"],
             }
             payload["top_k"] = args.top_k
+            payload["candidate_limit"] = 20
             response = requests.post(
                 f"{args.base_url}/api/v1/retrieve", json=payload, timeout=180
             )
@@ -69,7 +70,7 @@ def main() -> None:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = list(rows[0]) if rows else []
     with args.output.open("w", encoding="utf-8-sig", newline="") as file:
-        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer = csv.DictWriter(file, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
     print(f"Candidates: {len(rows)}")

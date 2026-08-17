@@ -6,6 +6,8 @@ Generate a pooled candidate file from all three retrieval systems:
 python scripts/export_annotation_pool.py
 ```
 
+`candidate_pool_15.csv` is the current review batch: 15 questions and 241 unique candidates.
+
 For each query/review pair, assign:
 
 - `2`: directly relevant and useful evidence;

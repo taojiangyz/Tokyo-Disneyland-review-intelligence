@@ -75,6 +75,7 @@ def retrieve_reviews(
         date_from=date_from,
         date_to=date_to,
         limit=request_body.top_k,
+        candidate_limit=request_body.candidate_limit,
     )
     evidence = [
         EvidenceItem(
