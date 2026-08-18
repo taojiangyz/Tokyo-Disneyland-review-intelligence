@@ -172,6 +172,10 @@ def translate_reviews(
 
     api_key = os.getenv("GEMINI_API_KEY")
     model_name = os.getenv("GEMINI_MODEL")
+    fallback_model_name = os.getenv(
+        "GEMINI_FALLBACK_MODEL",
+        "gemini-3.5-flash-lite",
+    )
 
     if not api_key or not model_name:
         return [
@@ -207,10 +211,23 @@ Reviews:
     try:
         client = genai.Client(api_key=api_key)
 
-        response = client.models.generate_content(
-            model=model_name,
-            contents=prompt,
-        )
+        response = None
+        last_error = None
+        for candidate_model in dict.fromkeys(
+            [model_name, fallback_model_name]
+        ):
+            try:
+                response = client.models.generate_content(
+                    model=candidate_model,
+                    contents=prompt,
+                )
+                break
+            except Exception as exc:
+                last_error = exc
+
+        if response is None:
+            assert last_error is not None
+            raise last_error
 
         raw_text = (response.text or "").strip()
 

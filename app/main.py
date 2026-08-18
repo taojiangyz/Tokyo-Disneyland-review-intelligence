@@ -285,7 +285,7 @@ def analyze_reviews(
         },
         "generation": {
             "provider": "Gemini",
-            "model": gemini_service.model_name,
+            "model": gemini_service.last_model_name,
             "evidence_count": len(evidence),
             "prompt_version": "v1",
             "status": generation_status,

@@ -205,6 +205,7 @@ At Top 5, dense retrieval had the strongest recall and ranking quality. At Top 1
 - **Auditable answers:** each summary is paired with the exact review IDs, original text, market, rating, and date used as evidence.
 - **Dynamic segmentation:** the same question can be rerun for selected markets, rating ranges, date ranges, and evidence counts.
 - **Graceful degradation:** if Gemini is unavailable, the API returns a clear degraded status and still displays retrieved customer evidence instead of failing the whole workflow.
+- **Model fallback:** if the primary Gemini model is temporarily overloaded, answer generation and evidence translation retry with the configured fallback model.
 - **Measured trade-offs:** retrieval choices are justified using human labels rather than a purely qualitative demo.
 
 See [docs/portfolio-case-study.md](docs/portfolio-case-study.md) for the interview narrative and [docs/demo-script.md](docs/demo-script.md) for a short recording script.

@@ -153,6 +153,7 @@ Top 5 では Dense が Recall とランキング品質の両方で最高でし�
 
 - フィルターに一致するレビューがない場合、Gemini を呼ばず回答生成をスキップ
 - Gemini 障害時も取得済みレビューを表示し、`degraded` ステータスを返却
+- Gemini の Primary Model が一時的に過負荷の場合、設定済みの Fallback Model で回答生成と翻訳を再試行
 - 回答の引用 ID が返却エビデンスに含まれることを回帰テストで確認
 - API ログは JSON Lines 形式で Request ID、Method、Path、Status、処理時間を記録
 - `X-Request-ID` レスポンスヘッダーでログを追跡可能

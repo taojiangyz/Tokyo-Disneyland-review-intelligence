@@ -1,8 +1,11 @@
 import os
+import logging
 from pathlib import Path
 
 from dotenv import load_dotenv
 from google import genai
+
+logger = logging.getLogger(__name__)
 
 
 class GeminiService:
@@ -19,6 +22,11 @@ class GeminiService:
             raise RuntimeError("GEMINI_MODEL is missing")
 
         self.model_name = model_name
+        self.fallback_model_name = os.getenv(
+            "GEMINI_FALLBACK_MODEL",
+            "gemini-3.5-flash-lite",
+        )
+        self.last_model_name = model_name
         self.client = genai.Client(api_key=api_key)
 
     def generate_answer(
@@ -52,9 +60,27 @@ Review evidence:
 {evidence_text}
 """
 
-        response = self.client.models.generate_content(
-            model=self.model_name,
-            contents=prompt,
+        models = list(
+            dict.fromkeys(
+                [self.model_name, self.fallback_model_name]
+            )
         )
+        last_error: Exception | None = None
 
-        return response.text or "Gemini returned an empty response."
+        for model_name in models:
+            try:
+                response = self.client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                )
+                self.last_model_name = model_name
+                return response.text or "Gemini returned an empty response."
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "Gemini model unavailable; trying fallback",
+                    extra={"model": model_name},
+                )
+
+        assert last_error is not None
+        raise last_error
