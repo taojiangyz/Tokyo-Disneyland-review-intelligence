@@ -1,5 +1,7 @@
 # Aladdin — Tokyo Disney Review Intelligence
 
+[English](README.md) | [日本語](README.ja.md)
+
 Aladdin is an evidence-grounded, multilingual review analysis assistant for Tokyo Disneyland. It lets managers ask open-ended business questions, apply market/date/rating filters, and inspect the original customer reviews behind every answer.
 
 The project demonstrates an end-to-end applied AI workflow: reproducible data ingestion, hybrid retrieval, cross-encoder reranking, grounded generation, regression evaluation, observability, and a business-facing UI.
