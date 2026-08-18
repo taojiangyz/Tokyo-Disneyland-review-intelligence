@@ -86,11 +86,11 @@ make run-api
 make run-ui
 ```
 
-Open:
+After both services are running locally, open the following addresses in your own browser. These are local development endpoints, not publicly hosted demo links:
 
-- UI: <http://127.0.0.1:8501>
-- API documentation: <http://127.0.0.1:8000/docs>
-- Health check: <http://127.0.0.1:8000/health>
+- UI: `http://127.0.0.1:8501`
+- API documentation: `http://127.0.0.1:8000/docs`
+- Health check: `http://127.0.0.1:8000/health`
 
 ### Docker Compose
 

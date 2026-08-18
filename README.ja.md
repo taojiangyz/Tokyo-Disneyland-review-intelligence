@@ -81,9 +81,11 @@ make run-api
 make run-ui
 ```
 
-- UI: <http://127.0.0.1:8501>
-- API Docs: <http://127.0.0.1:8000/docs>
-- Health Check: <http://127.0.0.1:8000/health>
+両方のサービスをローカルで起動した後、自分のブラウザで以下のアドレスを開きます。これらはローカル開発用 Endpoint であり、公開 Demo のリンクではありません。
+
+- UI: `http://127.0.0.1:8501`
+- API Docs: `http://127.0.0.1:8000/docs`
+- Health Check: `http://127.0.0.1:8000/health`
 
 Docker を利用する場合：
 
