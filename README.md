@@ -45,7 +45,7 @@ The indexed dataset currently contains:
 | Korea (`KR`) | 434 |
 | **Total** | **2,049** |
 
-Review dates range from 2023-06-07 to 2026-02-11. Ratings range from 1 to 5. The source and normalized JSONL files are versioned; the generated Qdrant database is not.
+Review dates range from 2023-06-07 to 2026-02-11. Ratings range from 1 to 5. To respect reviewer privacy and source-platform redistribution restrictions, raw review text, usernames, generated candidate pools, translations, and the Qdrant database are not included in this public repository. The aggregate counts and human-verified relevance grades are retained for reproducibility of the documented evaluation methodology.
 
 ## Quick start
 
@@ -66,6 +66,8 @@ If `data/qdrant_db` is not present, build the local index:
 make validate-data
 make rebuild-index
 ```
+
+The private source files expected by the pipeline are documented in [data/README.md](data/README.md). They must be obtained through an authorized source before rebuilding the full index.
 
 `make rebuild-index` intentionally replaces `data/qdrant_db`; stop the API before running it. The underlying Python command refuses to replace an index unless `--yes` is supplied.
 
@@ -171,7 +173,7 @@ make evaluate-retrieval
 
 The human-verified retrieval comparison is documented in [docs/retrieval-baseline.md](docs/retrieval-baseline.md): 241 judgments across 15 questions compare dense, hybrid RRF, and two reranker candidate-pool sizes.
 
-A 15-query pooled annotation set with 241 unique candidates is available at `evals/annotations/candidate_pool_15.csv`. The annotation page displays original text plus cached Chinese translations for Korean reviews, saves progress after every decision, supports CSV export, and reports agreement with optional Codex suggestions. AI translations and suggestions are explicitly separated from human-verified labels.
+The internal benchmark contains 241 unique candidates across 15 questions. Candidate text and cached translations are excluded from the public repository; the annotation workflow and human-verified relevance grades remain available for inspection. AI translations and suggestions are explicitly separated from human-verified labels.
 
 ### Human-verified retrieval results
 

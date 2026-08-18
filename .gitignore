@@ -5,5 +5,9 @@ __pycache__/
 .DS_Store
 .env
 data/qdrant_db/
+data/tdr_land_reviews_clean.jsonl
+data/disney_reviews_normalized.jsonl
 models/
 evals/results/
+evals/annotations/candidate_pool_*.csv
+evals/annotations/translation_cache.json
