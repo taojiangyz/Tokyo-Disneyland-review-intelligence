@@ -18,6 +18,7 @@ HERO_IMAGE = Path("assets/tokyo_disney_ai_hero.png")
 COPY = {
     "English": {
         "subtitle": "Evidence-based customer review analysis for management decision support",
+        "data_source": "Data source: verified ticket-purchaser reviews from Trip.com/Ctrip.com users in Mainland China, South Korea, and Hong Kong",
         "business_question": "Business Question",
         "example_questions": "Example questions",
         "example_help": "Choose an example or edit the question below.",
@@ -62,6 +63,7 @@ COPY = {
     },
     "日本語": {
         "subtitle": "経営判断を支援する、根拠に基づいたカスタマーレビュー分析",
+        "data_source": "データ出典：Trip.com/Ctrip.com の中国本土・韓国・香港の実購入者レビュー",
         "business_question": "分析したい質問",
         "example_questions": "質問例",
         "example_help": "質問例を選ぶか、下の入力欄で自由に編集してください。",
@@ -310,6 +312,14 @@ st.markdown(
         line-height: 1.5;
     }
 
+    .hero-source {
+        max-width: 680px;
+        margin-top: 15px;
+        color: rgba(255, 255, 255, 0.82);
+        font-size: 14px;
+        line-height: 1.45;
+    }
+
     div[data-testid="stVerticalBlockBorderWrapper"] {
         border: 1px solid #e1e7f0;
         border-radius: 16px;
@@ -466,6 +476,9 @@ if hero_base64:
         f'</div>'
         f'<div class="hero-subtitle">'
         f'{t["subtitle"]}'
+        f'</div>'
+        f'<div class="hero-source">'
+        f'{t["data_source"]}'
         f'</div>'
         f'</div>'
         f'</div>'
