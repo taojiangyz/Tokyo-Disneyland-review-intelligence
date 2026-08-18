@@ -15,17 +15,111 @@ API_URL = f"{API_BASE_URL}/api/v1/analyze"
 METADATA_URL = f"{API_BASE_URL}/api/v1/metadata"
 HERO_IMAGE = Path("assets/tokyo_disney_ai_hero.png")
 
-DEFAULT_QUESTION = (
-    "What are the main complaints about waiting time "
-    "and crowding at Tokyo Disney?"
-)
+COPY = {
+    "English": {
+        "subtitle": "Evidence-based customer review analysis for management decision support",
+        "business_question": "Business Question",
+        "example_questions": "Example questions",
+        "example_help": "Choose an example or edit the question below.",
+        "ask": "Ask any question about the customer reviews",
+        "placeholder": "Example: What do visitors say about food prices?",
+        "search_caption": "Searches {count:,} indexed reviews. Filters are optional; no selection means all reviews.",
+        "markets": "Markets",
+        "all_markets": "All markets",
+        "rating_range": "Rating range",
+        "evidence_reviews": "Evidence reviews",
+        "filter_date": "Filter by date",
+        "date_range": "Review date range",
+        "analyze": "Analyze Reviews",
+        "analyzing": "AI is analyzing customer reviews...",
+        "translating": "Translating supporting reviews into English...",
+        "translation_target": "English",
+        "translation_unavailable": "English translation is temporarily unavailable.",
+        "summary": "Executive Summary",
+        "no_summary": "No management summary was generated.",
+        "degraded_answer": "Answer generation is temporarily unavailable. The retrieved supporting reviews are still shown below.",
+        "no_evidence_answer": "No reviews matched the selected filters, so there is not enough evidence to answer this question.",
+        "applied_filters": "Applied filters",
+        "rating": "Rating",
+        "dates": "Dates",
+        "all": "All",
+        "retrieved": "Reviews Retrieved",
+        "supporting": "Supporting Evidence",
+        "average": "Average Rating",
+        "reviews": "Supporting Customer Reviews",
+        "no_reviews": "No matching reviews were found for the selected filters.",
+        "market": "Market",
+        "date": "Date",
+        "translation": "English Translation",
+        "original": "Original Review",
+        "evidence": "Evidence",
+        "technical": "Technical Details",
+        "api_unavailable": "Live filter metadata is unavailable. Start the API, then refresh this page.",
+        "connection_error": "The analysis API is not running. Start the FastAPI server and try again.",
+        "timeout_error": "The analysis request took too long. Please try again.",
+        "api_error": "The API returned an error",
+        "unexpected_error": "Unexpected error",
+    },
+    "日本語": {
+        "subtitle": "経営判断を支援する、根拠に基づいたカスタマーレビュー分析",
+        "business_question": "分析したい質問",
+        "example_questions": "質問例",
+        "example_help": "質問例を選ぶか、下の入力欄で自由に編集してください。",
+        "ask": "カスタマーレビューについて自由に質問してください",
+        "placeholder": "例：食事の価格について、来園者はどのように評価していますか？",
+        "search_caption": "{count:,}件のレビューを検索します。フィルターは任意で、未選択の場合は全件が対象です。",
+        "markets": "市場",
+        "all_markets": "すべての市場",
+        "rating_range": "評価範囲",
+        "evidence_reviews": "表示する根拠レビュー数",
+        "filter_date": "日付で絞り込む",
+        "date_range": "レビュー投稿日",
+        "analyze": "レビューを分析",
+        "analyzing": "AIがカスタマーレビューを分析しています…",
+        "translating": "根拠レビューを日本語に翻訳しています…",
+        "translation_target": "Japanese",
+        "translation_unavailable": "日本語訳を一時的に利用できません。",
+        "summary": "分析サマリー",
+        "no_summary": "分析サマリーは生成されませんでした。",
+        "degraded_answer": "回答生成を一時的に利用できません。取得できた根拠レビューは引き続き確認できます。",
+        "no_evidence_answer": "選択した条件に一致するレビューがないため、この質問に回答するための根拠が不足しています。",
+        "applied_filters": "適用フィルター",
+        "rating": "評価",
+        "dates": "期間",
+        "all": "すべて",
+        "retrieved": "取得レビュー",
+        "supporting": "根拠レビュー",
+        "average": "平均評価",
+        "reviews": "根拠となるカスタマーレビュー",
+        "no_reviews": "選択した条件に一致するレビューはありません。",
+        "market": "市場",
+        "date": "投稿日",
+        "translation": "日本語訳",
+        "original": "原文",
+        "evidence": "根拠",
+        "technical": "技術構成",
+        "api_unavailable": "フィルター情報を取得できません。APIを起動してページを更新してください。",
+        "connection_error": "分析APIが起動していません。FastAPIを起動して再試行してください。",
+        "timeout_error": "分析に時間がかかりすぎました。もう一度お試しください。",
+        "api_error": "APIエラー",
+        "unexpected_error": "予期しないエラー",
+    },
+}
 
-EXAMPLE_QUESTIONS = [
-    DEFAULT_QUESTION,
-    "What do visitors say about staff service?",
-    "What are the main complaints in low-rated reviews?",
-    "What do visitors like most about their park experience?",
-]
+EXAMPLE_QUESTIONS = {
+    "English": [
+        "What are the main complaints about waiting time and crowding at Tokyo Disney?",
+        "What do visitors say about staff service?",
+        "What are the main complaints in low-rated reviews?",
+        "What do visitors like most about their park experience?",
+    ],
+    "日本語": [
+        "東京ディズニーランドの待ち時間と混雑に関する主な不満は何ですか？",
+        "スタッフのサービスについて、来園者はどのように評価していますか？",
+        "低評価レビューに多い不満は何ですか？",
+        "来園者がパーク体験で最も高く評価している点は何ですか？",
+    ],
+}
 
 
 def image_to_base64(image_path: Path) -> str:
@@ -61,8 +155,10 @@ def load_metadata() -> dict:
 
 
 
-def translate_reviews_to_english(
+def translate_reviews(
     evidence: list[dict],
+    target_language: str,
+    unavailable_message: str,
 ) -> list[str]:
     """Translate the visible evidence reviews in one Gemini request."""
     visible_items = evidence
@@ -77,7 +173,7 @@ def translate_reviews_to_english(
 
     if not api_key or not model_name:
         return [
-            "English translation is temporarily unavailable."
+            unavailable_message
             for _ in visible_items
         ]
 
@@ -93,12 +189,12 @@ def translate_reviews_to_english(
     )
 
     prompt = f"""
-Translate the following customer reviews into natural English.
+Translate the following customer reviews into natural {target_language}.
 
 Requirements:
 1. Preserve the original meaning.
 2. Do not summarize or add information.
-3. Return only a valid JSON array of English strings.
+3. Return only a valid JSON array of {target_language} strings.
 4. Keep the translations in exactly the same order.
 5. Return exactly {len(visible_items)} strings.
 
@@ -135,7 +231,7 @@ Reviews:
 
     except Exception:
         return [
-            "English translation is temporarily unavailable."
+            unavailable_message
             for _ in visible_items
         ]
 
@@ -194,18 +290,6 @@ st.markdown(
             rgba(3, 18, 70, 0.28) 58%,
             rgba(3, 18, 70, 0) 76%
         );
-    }
-
-    .hero-label {
-        width: fit-content;
-        margin-bottom: 16px;
-        padding: 7px 13px;
-        border: 1px solid rgba(255, 255, 255, 0.34);
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.13);
-        color: #ffffff;
-        font-size: 14px;
-        font-weight: 700;
     }
 
     .hero-title {
@@ -356,6 +440,15 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+language_column, _ = st.columns([1, 4])
+with language_column:
+    language = st.radio(
+        "Language / 言語",
+        options=["English", "日本語"],
+        horizontal=True,
+    )
+t = COPY[language]
+
 
 # -----------------------------
 # Hero banner
@@ -368,13 +461,11 @@ if hero_base64:
         f'style="background-image: '
         f'url(&quot;data:image/png;base64,{hero_base64}&quot;);">'
         f'<div class="hero-overlay">'
-        f'<div class="hero-label">MBA Thesis Prototype</div>'
         f'<div class="hero-title">'
         f'Tokyo Disney<br/>Review Intelligence'
         f'</div>'
         f'<div class="hero-subtitle">'
-        f'Evidence-based customer review analysis '
-        f'for management decision support'
+        f'{t["subtitle"]}'
         f'</div>'
         f'</div>'
         f'</div>'
@@ -407,34 +498,43 @@ except requests.RequestException:
         "evidence_count_options": [3, 5, 10],
     }
     st.warning(
-        "Live filter metadata is unavailable. "
-        "Start the API, then refresh this page."
+        t["api_unavailable"]
     )
 
-market_label_to_code = {
-    f"{item['label']} ({item['count']:,})": item["code"]
-    for item in metadata["markets"]
+market_names_ja = {
+    "CN": "中国本土",
+    "HK": "香港",
+    "KR": "韓国",
 }
+market_label_to_code = {}
+for item in metadata["markets"]:
+    label = (
+        market_names_ja.get(item["code"], item["label"])
+        if language == "日本語"
+        else item["label"]
+    )
+    market_label_to_code[f"{label} ({item['count']:,})"] = item["code"]
 
 with st.container(border=True):
-    st.subheader("Business Question")
+    st.subheader(t["business_question"])
 
     selected_example = st.selectbox(
-        "Example questions",
-        options=EXAMPLE_QUESTIONS,
-        help="Choose an example or edit the question below.",
+        t["example_questions"],
+        options=EXAMPLE_QUESTIONS[language],
+        help=t["example_help"],
+        key=f"examples-{language}",
     )
 
     question = st.text_area(
-        "Ask any question about the customer reviews",
+        t["ask"],
         value=selected_example,
         height=100,
-        placeholder="Example: What do visitors say about food prices?",
+        placeholder=t["placeholder"],
+        key=f"question-{language}",
     )
 
     st.caption(
-        f"Searches {metadata['total_reviews']:,} indexed reviews. "
-        "Filters are optional; no selection means all reviews."
+        t["search_caption"].format(count=metadata["total_reviews"])
     )
 
     control1, control2, control3, control4 = st.columns(
@@ -444,14 +544,14 @@ with st.container(border=True):
 
     with control1:
         selected_market_labels = st.multiselect(
-            "Markets",
+            t["markets"],
             options=list(market_label_to_code),
-            placeholder="All markets",
+            placeholder=t["all_markets"],
         )
 
     with control2:
         rating_range = st.slider(
-            "Rating range",
+            t["rating_range"],
             min_value=int(metadata["min_rating"]),
             max_value=int(metadata["max_rating"]),
             value=(
@@ -462,14 +562,14 @@ with st.container(border=True):
 
     with control3:
         evidence_count = st.selectbox(
-            "Evidence reviews",
+            t["evidence_reviews"],
             options=metadata["evidence_count_options"],
             index=1,
         )
 
     with control4:
         use_date_filter = st.checkbox(
-            "Filter by date",
+            t["filter_date"],
             value=False,
         )
 
@@ -479,7 +579,7 @@ with st.container(border=True):
         from datetime import date
 
         selected_dates = st.date_input(
-            "Review date range",
+            t["date_range"],
             value=(
                 date.fromisoformat(metadata["min_date"]),
                 date.fromisoformat(metadata["max_date"]),
@@ -489,7 +589,7 @@ with st.container(border=True):
         )
 
     analyze_clicked = st.button(
-        "Analyze Reviews",
+        t["analyze"],
         type="primary",
         use_container_width=True,
         disabled=not question.strip(),
@@ -523,7 +623,7 @@ if analyze_clicked:
 
     try:
         with st.spinner(
-            "AI is analyzing customer reviews..."
+            t["analyzing"]
         ):
             response = requests.post(
                 API_URL,
@@ -536,17 +636,30 @@ if analyze_clicked:
 
         answer = result.get(
             "answer",
-            "No management summary was generated.",
+            t["no_summary"],
         )
+        generation_status = (
+            result.get("trace", {})
+            .get("generation", {})
+            .get("status")
+        )
+        if generation_status == "degraded":
+            answer = t["degraded_answer"]
+        elif generation_status == "skipped_no_evidence":
+            answer = t["no_evidence_answer"]
 
         evidence = result.get("evidence", [])
         applied_filters = result.get("filters", {})
 
         with st.spinner(
-            "Translating supporting reviews into English..."
+            t["translating"]
         ):
-            english_translations = (
-                translate_reviews_to_english(evidence)
+            review_translations = (
+                translate_reviews(
+                    evidence,
+                    t["translation_target"],
+                    t["translation_unavailable"],
+                )
             )
 
         ratings = [
@@ -568,33 +681,33 @@ if analyze_clicked:
 
         with left_column:
             with st.container(border=True):
-                st.subheader("Executive Summary")
+                st.subheader(t["summary"])
                 st.write(answer)
 
                 applied_markets = applied_filters.get("regions") or [
-                    "All markets"
+                    t["all_markets"]
                 ]
                 st.caption(
-                    "Applied filters — "
-                    f"Markets: {', '.join(applied_markets)} · "
-                    f"Rating: {rating_range[0]}–{rating_range[1]} · "
-                    f"Dates: {date_from or 'All'} to {date_to or 'All'}"
+                    f"{t['applied_filters']} — "
+                    f"{t['markets']}: {', '.join(applied_markets)} · "
+                    f"{t['rating']}: {rating_range[0]}–{rating_range[1]} · "
+                    f"{t['dates']}: {date_from or t['all']} — {date_to or t['all']}"
                 )
 
                 metric1, metric2, metric3 = st.columns(3)
 
                 metric1.metric(
-                    "Reviews Retrieved",
+                    t["retrieved"],
                     len(evidence),
                 )
 
                 metric2.metric(
-                    "Supporting Evidence",
+                    t["supporting"],
                     len(evidence),
                 )
 
                 metric3.metric(
-                    "Average Rating",
+                    t["average"],
                     (
                         f"{average_rating:.1f} / 5"
                         if average_rating is not None
@@ -605,13 +718,12 @@ if analyze_clicked:
         with right_column:
             with st.container(border=True):
                 st.subheader(
-                    "Supporting Customer Reviews"
+                    t["reviews"]
                 )
 
                 if not evidence:
                     st.info(
-                        "No matching reviews were found "
-                        "for the selected filters."
+                        t["no_reviews"]
                     )
 
                 for index, item in enumerate(evidence, start=1):
@@ -629,7 +741,7 @@ if analyze_clicked:
                         )
                     )
                     translated_text = safe_text(
-                        english_translations[index - 1]
+                        review_translations[index - 1]
                     )
                     original_text = safe_text(
                         item.get("text", "")
@@ -643,21 +755,21 @@ if analyze_clicked:
                         f'<span class="review-stars">{stars}</span>'
                         f'</div>'
                         f'<div class="review-meta">'
-                        f'Market: {region} · '
-                        f'Rating: {safe_text(rating)}/5 · '
-                        f'Date: {review_date}'
+                        f'{t["market"]}: {region} · '
+                        f'{t["rating"]}: {safe_text(rating)}/5 · '
+                        f'{t["date"]}: {review_date}'
                         f'</div>'
                         f'<div class="review-text">'
-                        f'<strong>English Translation</strong><br>'
+                        f'<strong>{t["translation"]}</strong><br>'
                         f'{translated_text}'
-                        f'<br><br><strong>Original Review</strong><br>'
+                        f'<br><br><strong>{t["original"]}</strong><br>'
                         f'{original_text}'
                         f'</div>'
                         f'</div>'
                     )
 
                     expander_label = (
-                        f"Evidence {index} · "
+                        f"{t['evidence']} {index} · "
                         f"{item.get('review_id', 'Unknown')} · {stars}"
                     )
 
@@ -668,93 +780,51 @@ if analyze_clicked:
                         st.html(review_html)
 
         with st.container(border=True):
-            st.subheader("Technical Details")
+            st.subheader(t["technical"])
 
-            tech1, tech2, tech3, tech4 = st.columns(4)
-
-            with tech1:
-                st.markdown(
-                    """
-                    <div class="tech-item">
-                        <div class="tech-title">
-                            Hybrid Retrieval
+            tech_copy = {
+                "English": [
+                    ("Hybrid Retrieval", "Dense and sparse retrieval combined with RRF"),
+                    ("Reranking", "BGE cross-encoder reranker"),
+                    ("Language Model", "Gemini evidence-based answer generation"),
+                    ("Vector Database", "Qdrant review storage and metadata filtering"),
+                ],
+                "日本語": [
+                    ("ハイブリッド検索", "Dense検索とSparse検索をRRFで統合"),
+                    ("リランキング", "BGEクロスエンコーダーで関連度を再評価"),
+                    ("言語モデル", "Geminiによる根拠ベースの回答生成"),
+                    ("ベクトルDB", "Qdrantによるレビュー保存とメタデータ絞り込み"),
+                ],
+            }
+            tech_columns = st.columns(4)
+            for column, (title, description) in zip(
+                tech_columns,
+                tech_copy[language],
+            ):
+                with column:
+                    st.markdown(
+                        f"""
+                        <div class="tech-item">
+                            <div class="tech-title">{title}</div>
+                            <div class="tech-description">{description}</div>
                         </div>
-                        <div class="tech-description">
-                            Dense and sparse retrieval
-                            combined with RRF
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-            with tech2:
-                st.markdown(
-                    """
-                    <div class="tech-item">
-                        <div class="tech-title">
-                            Reranking
-                        </div>
-                        <div class="tech-description">
-                            BGE cross-encoder reranker
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-            with tech3:
-                st.markdown(
-                    """
-                    <div class="tech-item">
-                        <div class="tech-title">
-                            Language Model
-                        </div>
-                        <div class="tech-description">
-                            Gemini evidence-based
-                            answer generation
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-            with tech4:
-                st.markdown(
-                    """
-                    <div class="tech-item">
-                        <div class="tech-title">
-                            Vector Database
-                        </div>
-                        <div class="tech-description">
-                            Qdrant review storage
-                            and metadata filtering
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+                        """,
+                        unsafe_allow_html=True,
+                    )
 
     except requests.exceptions.ConnectionError:
-        st.error(
-            "The analysis API is not running. "
-            "Start the FastAPI server and try again."
-        )
+        st.error(t["connection_error"])
 
     except requests.exceptions.Timeout:
-        st.error(
-            "The analysis request took too long. "
-            "Please try again."
-        )
+        st.error(t["timeout_error"])
 
     except requests.exceptions.HTTPError:
         st.error(
-            f"The API returned an error: "
-            f"{response.status_code}"
+            f"{t['api_error']}: {response.status_code}"
         )
         st.code(response.text)
 
     except Exception as error:
         st.error(
-            f"Unexpected error: {error}"
+            f"{t['unexpected_error']}: {error}"
         )
