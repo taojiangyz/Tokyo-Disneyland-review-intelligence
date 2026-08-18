@@ -173,6 +173,27 @@ The human-verified retrieval comparison is documented in [docs/retrieval-baselin
 
 A 15-query pooled annotation set with 241 unique candidates is available at `evals/annotations/candidate_pool_15.csv`. The annotation page displays original text plus cached Chinese translations for Korean reviews, saves progress after every decision, supports CSV export, and reports agreement with optional Codex suggestions. AI translations and suggestions are explicitly separated from human-verified labels.
 
+### Human-verified retrieval results
+
+| Retrieval mode | Recall@10 | nDCG@10 | Mean latency |
+|---|---:|---:|---:|
+| Dense | 0.673 | 0.792 | 410 ms |
+| Hybrid RRF | 0.616 | 0.732 | 222 ms |
+| Hybrid + reranker (10 candidates) | 0.607 | 0.745 | 3,301 ms |
+| Hybrid + reranker (20 candidates) | **0.674** | **0.800** | 6,163 ms |
+
+The 20-candidate reranker produced the best ranking quality, but dense retrieval was within 0.001 Recall and 0.009 nDCG while avoiding several seconds of CPU latency. Dense retrieval is therefore the practical interactive default; reranking is better suited to offline analysis or stronger hardware.
+
+## Demonstrable product behavior
+
+- **Open-ended analysis:** a manager can ask about queues, staff, food, price, children, sentiment, or a new topic without adding a hard-coded question.
+- **Auditable answers:** each summary is paired with the exact review IDs, original text, market, rating, and date used as evidence.
+- **Dynamic segmentation:** the same question can be rerun for selected markets, rating ranges, date ranges, and evidence counts.
+- **Graceful degradation:** if Gemini is unavailable, the API returns a clear degraded status and still displays retrieved customer evidence instead of failing the whole workflow.
+- **Measured trade-offs:** retrieval choices are justified using human labels rather than a purely qualitative demo.
+
+See [docs/portfolio-case-study.md](docs/portfolio-case-study.md) for the interview narrative and [docs/demo-script.md](docs/demo-script.md) for a short recording script.
+
 ## Retrieval trace
 
 Every response records:
