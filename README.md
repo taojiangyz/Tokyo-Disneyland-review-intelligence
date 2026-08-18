@@ -4,14 +4,14 @@
 
 Aladdin is an evidence-grounded, multilingual review analysis assistant for Tokyo Disneyland. It lets managers ask open-ended business questions, apply market/date/rating filters, and inspect the original customer reviews behind every answer.
 
-The project demonstrates an end-to-end applied AI workflow: reproducible data ingestion, hybrid retrieval, cross-encoder reranking, grounded generation, regression evaluation, observability, and a business-facing UI.
+The project demonstrates an end-to-end applied AI workflow: reproducible data ingestion, evaluation-selected dense retrieval, experimental hybrid/reranker modes, grounded generation, regression evaluation, observability, and a business-facing UI.
 
 ## What it can do
 
 - Answer free-form questions in English or Chinese instead of relying on predefined prompts.
 - Filter 2,049 reviews by one or more markets, date range, and rating range.
-- Combine BGE-M3 dense and sparse retrieval with Reciprocal Rank Fusion (RRF).
-- Rerank candidates using `BAAI/bge-reranker-v2-m3`.
+- Use BGE-M3 Dense Top 5 in the interactive path, selected through human-labeled evaluation.
+- Retain sparse/RRF and `BAAI/bge-reranker-v2-m3` modes for reproducible offline comparison.
 - Generate evidence-based answers with review ID citations.
 - Show expandable evidence cards with original text and English translations.
 - Degrade gracefully when Gemini is unavailable while preserving retrieved evidence.
@@ -26,11 +26,11 @@ flowchart LR
     C --> D["Local Qdrant index"]
     U["Manager question and filters"] --> API["FastAPI analysis service"]
     API --> D
-    D --> RRF["Dense + sparse RRF retrieval"]
-    RRF --> RR["BGE cross-encoder reranking"]
-    RR --> G["Gemini grounded generation"]
+    D --> DR["Evaluated Dense Top 5 retrieval"]
+    DR --> G["Gemini grounded generation"]
     G --> UI["Streamlit evidence UI"]
-    RR --> UI
+    DR --> UI
+    D -. "offline evaluation" .-> EXP["Sparse + RRF + reranker modes"]
     API --> T["Trace and timing metadata"]
 ```
 
@@ -179,6 +179,17 @@ The internal benchmark contains 241 unique candidates across 15 questions. Candi
 
 ### Human-verified retrieval results
 
+The production endpoint uses **Dense Top 5**, selected from the same 241 human judgments because it achieved the best Recall@5 and nDCG@5 while remaining interactive.
+
+| Retrieval mode | Recall@5 | nDCG@5 | Mean latency |
+|---|---:|---:|---:|
+| **Dense (production default)** | **0.365** | **0.772** | **387 ms** |
+| Hybrid RRF | 0.314 | 0.707 | 243 ms |
+| Hybrid + reranker (10 candidates) | 0.344 | 0.758 | 3,467 ms |
+| Hybrid + reranker (20 candidates) | 0.335 | 0.744 | 6,834 ms |
+
+The broader Top-10 comparison remains useful for retrieval experiments:
+
 | Retrieval mode | Recall@10 | nDCG@10 | Mean latency |
 |---|---:|---:|---:|
 | Dense | 0.673 | 0.792 | 410 ms |
@@ -186,7 +197,7 @@ The internal benchmark contains 241 unique candidates across 15 questions. Candi
 | Hybrid + reranker (10 candidates) | 0.607 | 0.745 | 3,301 ms |
 | Hybrid + reranker (20 candidates) | **0.674** | **0.800** | 6,163 ms |
 
-The 20-candidate reranker produced the best ranking quality, but dense retrieval was within 0.001 Recall and 0.009 nDCG while avoiding several seconds of CPU latency. Dense retrieval is therefore the practical interactive default; reranking is better suited to offline analysis or stronger hardware.
+At Top 5, dense retrieval had the strongest recall and ranking quality. At Top 10, the 20-candidate reranker was only marginally better while adding several seconds of CPU latency. Dense retrieval is therefore the measured interactive default; hybrid and reranker modes remain available through the evaluation endpoint for reproducible comparison.
 
 ## Demonstrable product behavior
 

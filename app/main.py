@@ -160,21 +160,21 @@ def analyze_reviews(
     selected_regions = request_body.selected_regions()
 
     ranked_results, debug_info = (
-        rag_service.search_and_rerank(
+        rag_service.retrieve_for_evaluation(
             query=request_body.query,
+            mode="dense",
             regions=selected_regions,
             min_rating=request_body.min_rating,
             max_rating=request_body.max_rating,
             date_from=date_from,
             date_to=date_to,
-            candidate_limit=20,
-            final_limit=request_body.top_k,
+            limit=request_body.top_k,
         )
     )
 
     evidence_blocks: list[str] = []
 
-    for point, reranker_score in ranked_results:
+    for point, dense_score in ranked_results:
         payload = point.payload or {}
 
         evidence_blocks.append(
@@ -184,11 +184,7 @@ def analyze_reviews(
                     f"Region: {payload.get('region')}",
                     f"Rating: {payload.get('rating')}",
                     f"Date: {payload.get('review_date')}",
-                    f"RRF score: {float(point.score):.4f}",
-                    (
-                        "Reranker score: "
-                        f"{float(reranker_score):.4f}"
-                    ),
+                    f"Dense similarity score: {float(dense_score):.4f}",
                     f"Review: {payload.get('text')}",
                 ]
             )
@@ -230,7 +226,7 @@ def analyze_reviews(
 
     evidence: list[EvidenceItem] = []
 
-    for point, reranker_score in ranked_results:
+    for point, _dense_score in ranked_results:
         payload = point.payload or {}
 
         evidence.append(
@@ -243,7 +239,7 @@ def analyze_reviews(
                 review_date=payload.get("review_date"),
                 text=str(payload.get("text", "")),
                 rrf_score=float(point.score),
-                reranker_score=float(reranker_score),
+                reranker_score=None,
             )
         )
 
@@ -267,27 +263,25 @@ def analyze_reviews(
         },
         "filters": filters,
         "retrieval": {
+            "mode": "dense",
             "embedding_model": "BAAI/bge-m3",
             "dense_vector": True,
-            "sparse_vector": True,
-            "fusion_method": "RRF",
-            "candidate_limit": 20,
+            "sparse_vector": False,
+            "fusion_method": None,
+            "candidate_limit": request_body.top_k,
             "candidate_count": debug_info["hybrid_candidate_count"],
         },
         "reranking": {
-            "model": "BAAI/bge-reranker-v2-m3",
-            "input_count": (
-                debug_info["hybrid_candidate_count"]
-            ),
+            "enabled": False,
+            "model": None,
+            "input_count": 0,
             "output_count": (
                 debug_info["final_selected_count"]
             ),
             "selected_review_ids": [
                 item.review_id for item in evidence
             ],
-            "ranking_changes": (
-                debug_info["reranking_trace"]
-            ),
+            "ranking_changes": [],
         },
         "generation": {
             "provider": "Gemini",

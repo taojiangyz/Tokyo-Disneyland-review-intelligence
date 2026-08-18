@@ -4,14 +4,14 @@
 
 Aladdin は、東京ディズニーランドのカスタマーレビューを分析する、多言語・根拠提示型の RAG アシスタントです。マネージャーは自由形式の質問を入力し、市場・日付・評価で絞り込みながら、回答の根拠となった原文レビューを確認できます。
 
-本プロジェクトは、再現可能なデータ処理、ハイブリッド検索、クロスエンコーダーによるリランキング、根拠に基づく回答生成、回帰評価、可観測性、業務向け UI を含む、Applied AI のエンドツーエンド実装です。
+本プロジェクトは、再現可能なデータ処理、人手評価で選定した Dense 検索、比較実験用の Hybrid / Reranker、根拠に基づく回答生成、回帰評価、可観測性、業務向け UI を含む、Applied AI のエンドツーエンド実装です。
 
 ## 主な機能
 
 - 英語・日本語・中国語などの自由形式質問に対応
 - 2,049 件のレビューを市場、日付、評価で絞り込み
-- BGE-M3 の Dense / Sparse 検索を Reciprocal Rank Fusion（RRF）で統合
-- `BAAI/bge-reranker-v2-m3` による候補レビューの再評価
+- 対話処理では、人手評価で選定した BGE-M3 Dense Top 5 を使用
+- Sparse / RRF と `BAAI/bge-reranker-v2-m3` は再現可能なオフライン比較用として保持
 - Gemini による、レビュー ID を引用した根拠ベースの回答生成
 - 原文、翻訳、評価、投稿日を確認できる展開式エビデンスカード
 - Gemini 障害時も検索済みエビデンスを返す Graceful Degradation
@@ -27,11 +27,11 @@ flowchart LR
     C --> D["ローカル Qdrant Index"]
     U["質問・フィルター"] --> API["FastAPI 分析サービス"]
     API --> D
-    D --> RRF["Dense + Sparse RRF"]
-    RRF --> RR["BGE Cross-Encoder Reranker"]
-    RR --> G["Gemini 根拠ベース生成"]
+    D --> DR["評価で選定した Dense Top 5"]
+    DR --> G["Gemini 根拠ベース生成"]
     G --> UI["Streamlit Evidence UI"]
-    RR --> UI
+    DR --> UI
+    D -. "オフライン評価" .-> EXP["Sparse + RRF + Reranker"]
     API --> T["Trace・処理時間"]
 ```
 
@@ -127,6 +127,17 @@ make regression
 
 15 問、241 件の Query / Review ペアに対して、0（無関係）、1（部分的に関連）、2（直接関連）の人手ラベルを作成しました。
 
+本番 API は **Dense Top 5** を使用します。5 件のエビデンスを Gemini に渡す実際の条件で、Recall@5 と nDCG@5 がともに最高だったためです。
+
+| 検索方式 | Recall@5 | nDCG@5 | 平均処理時間 |
+|---|---:|---:|---:|
+| **Dense（本番デフォルト）** | **0.365** | **0.772** | **387 ms** |
+| Hybrid RRF | 0.314 | 0.707 | 243 ms |
+| Hybrid + Reranker（候補 10 件） | 0.344 | 0.758 | 3,467 ms |
+| Hybrid + Reranker（候補 20 件） | 0.335 | 0.744 | 6,834 ms |
+
+以下の Top 10 結果は、より広い検索比較のために保持しています。
+
 | 検索方式 | Recall@10 | nDCG@10 | 平均処理時間 |
 |---|---:|---:|---:|
 | Dense | 0.673 | 0.792 | 410 ms |
@@ -134,7 +145,7 @@ make regression
 | Hybrid + Reranker（候補 10 件） | 0.607 | 0.745 | 3,301 ms |
 | Hybrid + Reranker（候補 20 件） | **0.674** | **0.800** | 6,163 ms |
 
-候補 20 件の Reranker は最高のランキング品質を達成しました。一方、Dense 検索は Recall の差が 0.001、nDCG の差が 0.009 に留まり、CPU 上で数秒のリランキング遅延を回避できます。そのため、対話型処理では Dense 検索、オフライン分析または高性能環境では Reranker を利用する構成が現実的です。
+Top 5 では Dense が Recall とランキング品質の両方で最高でした。Top 10 では候補 20 件の Reranker がわずかに上回りましたが、CPU 上で数秒の遅延が追加されます。そのため Dense を対話型処理のデフォルトとし、Hybrid / Reranker は評価 API で比較可能な状態を維持しています。
 
 詳細は [docs/retrieval-baseline.md](docs/retrieval-baseline.md) を参照してください。
 
