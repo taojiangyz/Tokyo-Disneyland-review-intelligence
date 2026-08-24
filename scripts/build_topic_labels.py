@@ -104,6 +104,9 @@ def build_prompt(batch: list[dict[str, Any]], taxonomy: dict[str, Any]) -> str:
     return f"""You label customer reviews for review-intelligence analytics.
 Assign one or more topics, one overall sentiment, and confidence from 0 to 1.
 Use only the allowed topic IDs. Use other only when no defined topic fits.
+Treat content about a hotel or a different destination as other; do not infer
+park topics from it. Use food_price only when food, drinks, restaurants, or
+snacks are explicitly discussed. Use value_for_money for overall cost or value.
 Do not translate, summarize, or alter review_id.
 
 Allowed topics:
