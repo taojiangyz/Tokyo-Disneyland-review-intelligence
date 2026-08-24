@@ -1,6 +1,6 @@
 PYTHON ?= .venv/bin/python
 
-.PHONY: validate-data prepare-data rebuild-index test regression annotation-pool evaluate-retrieval translations topic-labels topic-audit-sample run-api run-ui run-annotation run-topic-audit docker-up docker-down
+.PHONY: validate-data prepare-data rebuild-index test regression annotation-pool evaluate-retrieval translations topic-labels topic-audit-sample evaluate-topic-labels run-api run-ui run-annotation run-topic-audit docker-up docker-down
 
 validate-data:
 	$(PYTHON) src/prepare_data.py --validate-only
@@ -31,6 +31,9 @@ topic-labels:
 
 topic-audit-sample:
 	$(PYTHON) scripts/export_topic_audit.py
+
+evaluate-topic-labels:
+	$(PYTHON) scripts/evaluate_topic_labels.py
 
 run-api:
 	.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
