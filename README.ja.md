@@ -6,7 +6,7 @@ Aladdin は、東京ディズニーランドのカスタマーレビューを分
 
 ## プロダクトデモ
 
-![Tokyo Disney Review Intelligence デモ](assets/demo/tokyo_disney_review_intelligence_demo.gif)
+![Tokyo Disney Review Intelligence Agent デモ](assets/demo/tokyo_disney_agent_demo.gif)
 
 この短縮デモでは、日本語 UI への切り替え、自由形式の業務質問、動的フィルター、根拠に基づく回答生成、参照レビューの展開を確認できます。
 

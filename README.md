@@ -6,7 +6,7 @@ Aladdin is an evidence-grounded, multilingual review analysis assistant for Toky
 
 ## Product demo
 
-![Tokyo Disney Review Intelligence demo](assets/demo/tokyo_disney_review_intelligence_demo.gif)
+![Tokyo Disney Review Intelligence Agent demo](assets/demo/tokyo_disney_agent_demo.gif)
 
 The accelerated demo shows Japanese UI switching, an open-ended management question, dynamic filters, evidence-grounded generation, and expandable source reviews.
 
