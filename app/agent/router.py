@@ -27,14 +27,25 @@ IMPROVEMENT_TERMS = (
 )
 ROOT_CAUSE_TERMS = (
     "root cause",
+    "cause",
     "complaint",
+    "dissatisfaction",
+    "negative review",
+    "low-rated",
+    "low rated",
+    "low rating",
     "problem",
     "issue",
     "不满",
     "投诉",
     "根因",
+    "原因",
+    "差评",
+    "低评分",
     "問題",
     "不満",
+    "苦情",
+    "低評価",
 )
 
 

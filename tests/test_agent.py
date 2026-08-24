@@ -58,6 +58,13 @@ def test_router_supports_three_agent_workflows() -> None:
     assert route_task("What are the root causes of complaints?") == (
         "root_cause_analysis"
     )
+    assert route_task("What are the main causes of low-rated reviews?") == (
+        "root_cause_analysis"
+    )
+    assert route_task("低评分评论的主要原因是什么？") == "root_cause_analysis"
+    assert route_task("低評価レビューの主な原因は何ですか？") == (
+        "root_cause_analysis"
+    )
     assert route_task("What should management prioritize improving?") == (
         "improvement_planning"
     )
