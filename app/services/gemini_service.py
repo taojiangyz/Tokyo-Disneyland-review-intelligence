@@ -60,13 +60,48 @@ Review evidence:
 {evidence_text}
 """
 
+        return self._generate_with_fallback(prompt)
+
+    def generate_agent_answer(
+        self,
+        query: str,
+        task: str,
+        evidence_text: str,
+        analytics_json: str,
+    ) -> str:
+        prompt = f"""
+You are a review-intelligence agent for Tokyo Disneyland.
+
+Complete the requested business task using only the deterministic analytics
+and retrieved review evidence below. Answer in the same language as the user.
+
+Rules:
+1. Never invent counts, percentages, averages, dates, or market differences.
+2. Quantitative claims must come directly from the analytics JSON.
+3. Qualitative claims must cite at least one review ID in [review_id] format.
+4. Clearly distinguish customer evidence from your proposed management action.
+5. Do not generalize a small evidence sample to all visitors.
+6. If evidence is insufficient, state that limitation instead of guessing.
+7. End with an Evidence scope statement.
+
+Task type: {task}
+Question: {query}
+
+Deterministic analytics:
+{analytics_json}
+
+Retrieved evidence:
+{evidence_text}
+"""
+        return self._generate_with_fallback(prompt)
+
+    def _generate_with_fallback(self, prompt: str) -> str:
         models = list(
             dict.fromkeys(
                 [self.model_name, self.fallback_model_name]
             )
         )
         last_error: Exception | None = None
-
         for model_name in models:
             try:
                 response = self.client.models.generate_content(
@@ -81,6 +116,5 @@ Review evidence:
                     "Gemini model unavailable; trying fallback",
                     extra={"model": model_name},
                 )
-
         assert last_error is not None
         raise last_error

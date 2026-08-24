@@ -350,10 +350,17 @@ class RagService:
         print("Loading BGE-M3 embedding model...")
         self.embedding_model = create_embedding_model()
 
-        print("Loading BGE reranker...")
-        self.reranker = create_reranker()
+        # Dense retrieval is the evaluated interactive default. Load the
+        # CPU-heavy reranker only when an evaluation explicitly requests it.
+        self.reranker = None
 
         print("RagService is ready.")
+
+    def get_reranker(self):
+        if self.reranker is None:
+            print("Loading BGE reranker on demand...")
+            self.reranker = create_reranker()
+        return self.reranker
 
     def close(self) -> None:
         self.client.close()
@@ -621,7 +628,7 @@ class RagService:
 
         reranking_start = perf_counter()
 
-        reranker_scores = self.reranker.compute_score(
+        reranker_scores = self.get_reranker().compute_score(
             pairs,
             normalize=True,
             max_length=1024,

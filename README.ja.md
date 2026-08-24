@@ -115,6 +115,20 @@ docker compose up --build
 
 `POST /api/v1/retrieve` は Gemini を呼ばずに検索のみを実行します。`mode` は `dense`、`hybrid`、`hybrid_rerank` に対応し、`candidate_limit` で候補プールのサイズを制御できます。
 
+### AI 支援トピックラベル
+
+開発 Branch には、Version 管理された日英対応のトピック分類体系と、途中から再開できる Gemini 事前ラベル付け Pipeline が含まれます。各 Review に複数トピック、全体 Sentiment、Confidence を付与し、Agent が市場・評価・日付別のトピック分布を決定論的に集計します。
+
+```bash
+# まず小規模 Sample で API 使用量を確認
+python scripts/build_topic_labels.py --limit 40 --batch-size 20
+
+# 後日再開（完了済み review_id は自動的に Skip）
+make topic-labels
+```
+
+`data/topic_labels.jsonl` は非公開の派生 Data であり、Review 原文と同様に Git から除外されます。AI 支援ラベルは Ground Truth ではありません。本番利用では Sampling、人手修正、Taxonomy の Version 管理、品質測定が必要です。
+
 ## テストと評価
 
 Unit Test：
@@ -163,6 +177,27 @@ Top 5 では Dense が Recall とランキング品質の両方で最高でし�
 - Gemini 障害時も取得済みレビューを表示し、`degraded` ステータスを返却
 - Gemini の Primary Model が一時的に過負荷の場合、設定済みの Fallback Model で回答生成と翻訳を再試行
 - 回答の引用 ID が返却エビデンスに含まれることを回帰テストで確認
+
+## Agent MVP（開発 Branch）
+
+`feature/agent-mvp` Branch では、既存 RAG API の互換性を保ちながら、
+評価済みの検索基盤を Tool-Using Analytics Agent に拡張します。
+
+新しい `POST /api/v1/agent/analyze` は、質問を次の Task に振り分けます。
+
+- 根拠付き Q&A
+- Complaint Root-Cause Analysis
+- Market Comparison
+- Improvement Priority Planning
+
+Agent は、決定論的な Review Statistics、Dense Retrieval、Evidence
+Verification、Grounded Generation を順番に実行し、Task、Filter、Tool
+Output、Evidence、実行 Step、処理時間、最終回答を返します。件数・平均値は
+Code で計算し、Gemini に数値を推測させません。Root-Cause / Improvement
+Task は、Rating 条件が指定されない場合に 1～3 Star を対象とします。
+
+現段階では安全で評価可能な固定上限付き Plan を採用しています。Topic Label、
+会話 Memory、Replanning、Agent Task Completion Evaluation は次の Milestone です。
 - API ログは JSON Lines 形式で Request ID、Method、Path、Status、処理時間を記録
 - `X-Request-ID` レスポンスヘッダーでログを追跡可能
 - データ検証と決定論的 Qdrant Point ID による再現性

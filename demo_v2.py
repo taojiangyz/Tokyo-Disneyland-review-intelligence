@@ -12,6 +12,7 @@ from google import genai
 
 API_BASE_URL = os.getenv("ALADDIN_API_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 API_URL = f"{API_BASE_URL}/api/v1/analyze"
+AGENT_API_URL = f"{API_BASE_URL}/api/v1/agent/analyze"
 METADATA_URL = f"{API_BASE_URL}/api/v1/metadata"
 HERO_IMAGE = Path("assets/tokyo_disney_ai_hero.png")
 
@@ -20,6 +21,12 @@ COPY = {
         "subtitle": "Evidence-based customer review analysis for management decision support",
         "data_source": "Data source: verified ticket-purchaser reviews from Trip.com/Ctrip.com users in Mainland China, South Korea, and Hong Kong",
         "business_question": "Business Question",
+        "analysis_mode": "Analysis mode",
+        "rag_mode": "RAG Q&A",
+        "agent_mode": "Agent Analysis",
+        "agent_trace": "Agent execution trace",
+        "agent_task": "Selected task",
+        "agent_statistics": "Deterministic statistics",
         "example_questions": "Example questions",
         "example_help": "Choose an example or edit the question below.",
         "ask": "Ask any question about the customer reviews",
@@ -65,6 +72,12 @@ COPY = {
         "subtitle": "経営判断を支援する、根拠に基づいたカスタマーレビュー分析",
         "data_source": "データ出典：Trip.com/Ctrip.com の中国本土・韓国・香港の実購入者レビュー",
         "business_question": "分析したい質問",
+        "analysis_mode": "分析モード",
+        "rag_mode": "RAG Q&A",
+        "agent_mode": "Agent分析",
+        "agent_trace": "Agent実行トレース",
+        "agent_task": "選択されたTask",
+        "agent_statistics": "決定論的な統計",
         "example_questions": "質問例",
         "example_help": "質問例を選ぶか、下の入力欄で自由に編集してください。",
         "ask": "カスタマーレビューについて自由に質問してください",
@@ -548,6 +561,18 @@ for item in metadata["markets"]:
 with st.container(border=True):
     st.subheader(t["business_question"])
 
+    analysis_mode = st.radio(
+        t["analysis_mode"],
+        options=[t["rag_mode"], t["agent_mode"]],
+        horizontal=True,
+        help=(
+            "RAG answers a focused question. Agent Analysis selects and "
+            "executes retrieval, statistics, verification, and generation tools."
+            if language == "English"
+            else "RAGは単一質問に回答し、Agent分析は検索・統計・検証・生成Toolを選択して実行します。"
+        ),
+    )
+
     selected_example = st.selectbox(
         t["example_questions"],
         options=EXAMPLE_QUESTIONS[language],
@@ -650,13 +675,23 @@ if analyze_clicked:
         "date_to": date_to,
         "top_k": evidence_count,
     }
+    request_url = API_URL
+    if analysis_mode == t["agent_mode"]:
+        payload["evidence_limit"] = payload.pop("top_k")
+        if rating_range == (
+            int(metadata["min_rating"]),
+            int(metadata["max_rating"]),
+        ):
+            payload["min_rating"] = None
+            payload["max_rating"] = None
+        request_url = AGENT_API_URL
 
     try:
         with st.spinner(
             t["analyzing"]
         ):
             response = requests.post(
-                API_URL,
+                request_url,
                 json=payload,
                 timeout=180,
             )
@@ -680,6 +715,33 @@ if analyze_clicked:
 
         evidence = result.get("evidence", [])
         applied_filters = result.get("filters", {})
+
+        if analysis_mode == t["agent_mode"]:
+            with st.container(border=True):
+                st.subheader(t["agent_trace"])
+                st.caption(
+                    f"{t['agent_task']}: {result.get('task', 'unknown')}"
+                )
+                steps = result.get("steps", [])
+                if steps:
+                    st.dataframe(
+                        [
+                            {
+                                "Step": index,
+                                "Tool": step.get("tool"),
+                                "Status": step.get("status"),
+                                "Summary": step.get("summary"),
+                                "ms": step.get("duration_ms"),
+                            }
+                            for index, step in enumerate(steps, start=1)
+                        ],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                statistics = result.get("analytics", {}).get("statistics")
+                if statistics:
+                    with st.expander(t["agent_statistics"]):
+                        st.json(statistics)
 
         with st.spinner(
             t["translating"]
@@ -717,10 +779,16 @@ if analyze_clicked:
                 applied_markets = applied_filters.get("regions") or [
                     t["all_markets"]
                 ]
+                applied_min_rating = applied_filters.get("min_rating")
+                applied_max_rating = applied_filters.get("max_rating")
+                applied_rating = (
+                    f"{applied_min_rating or t['all']}–"
+                    f"{applied_max_rating or t['all']}"
+                )
                 st.caption(
                     f"{t['applied_filters']} — "
                     f"{t['markets']}: {', '.join(applied_markets)} · "
-                    f"{t['rating']}: {rating_range[0]}–{rating_range[1]} · "
+                    f"{t['rating']}: {applied_rating} · "
                     f"{t['dates']}: {date_from or t['all']} — {date_to or t['all']}"
                 )
 
@@ -814,15 +882,15 @@ if analyze_clicked:
 
             tech_copy = {
                 "English": [
-                    ("Hybrid Retrieval", "Dense and sparse retrieval combined with RRF"),
-                    ("Reranking", "BGE cross-encoder reranker"),
-                    ("Language Model", "Gemini evidence-based answer generation"),
+                    ("Retrieval", "Evaluation-selected BGE-M3 Dense retrieval"),
+                    ("Agent Tools", "Statistics, search, and evidence verification"),
+                    ("Language Model", "Gemini grounded explanation and fallback"),
                     ("Vector Database", "Qdrant review storage and metadata filtering"),
                 ],
                 "日本語": [
-                    ("ハイブリッド検索", "Dense検索とSparse検索をRRFで統合"),
-                    ("リランキング", "BGEクロスエンコーダーで関連度を再評価"),
-                    ("言語モデル", "Geminiによる根拠ベースの回答生成"),
+                    ("検索", "評価で選定したBGE-M3 Dense検索"),
+                    ("Agent Tool", "統計・検索・Evidence検証"),
+                    ("言語モデル", "Geminiによる根拠説明とFallback"),
                     ("ベクトルDB", "Qdrantによるレビュー保存とメタデータ絞り込み"),
                 ],
             }
