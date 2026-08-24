@@ -8,14 +8,16 @@ Aladdin is an evidence-grounded, multilingual review analysis assistant for Toky
 
 ![Tokyo Disney Review Intelligence Agent demo](assets/demo/tokyo_disney_agent_demo.gif)
 
-The accelerated demo shows Japanese UI switching, an open-ended management question, dynamic filters, evidence-grounded generation, and expandable source reviews.
+The demo shows a Japanese market-comparison question, automatic Agent routing and filtering, an auditable tool trace, full-dataset topic analytics, grounded generation, and expandable source reviews.
 
 The project demonstrates an end-to-end applied AI workflow: reproducible data ingestion, evaluation-selected dense retrieval, experimental hybrid/reranker modes, grounded generation, regression evaluation, observability, and a business-facing UI.
 
 ## What it can do
 
-- Answer free-form questions in English or Chinese instead of relying on predefined prompts.
+- Answer free-form questions in English, Japanese, or Chinese instead of relying on predefined prompts.
 - Filter 2,049 reviews by one or more markets, date range, and rating range.
+- Route questions into evidence Q&A, root-cause analysis, market comparison, or improvement planning.
+- Calculate market/topic/sentiment statistics from all 2,049 AI-assisted labels rather than asking Gemini to estimate counts.
 - Use BGE-M3 Dense Top 5 in the interactive path, selected through human-labeled evaluation.
 - Retain sparse/RRF and `BAAI/bge-reranker-v2-m3` modes for reproducible offline comparison.
 - Generate evidence-based answers with review ID citations.
@@ -29,11 +31,16 @@ The project demonstrates an end-to-end applied AI workflow: reproducible data in
 flowchart LR
     A["Raw multilingual reviews"] --> B["Validation and normalization"]
     B --> C["BGE-M3 dense and sparse embeddings"]
+    B --> L["Gemini topic pre-labeling"]
+    L --> TS["Private topic label store"]
     C --> D["Local Qdrant index"]
-    U["Manager question and filters"] --> API["FastAPI analysis service"]
+    U["Manager question and filters"] --> AG["Agent router and bounded plan"]
+    AG --> API["FastAPI analysis service"]
+    AG --> TS
     API --> D
     D --> DR["Evaluated Dense Top 5 retrieval"]
     DR --> G["Gemini grounded generation"]
+    TS --> G
     G --> UI["Streamlit evidence UI"]
     DR --> UI
     D -. "offline evaluation" .-> EXP["Sparse + RRF + reranker modes"]
@@ -148,7 +155,7 @@ The pipeline checks JSON validity, required IDs/text, duplicate IDs, rating boun
 
 ### AI-assisted topic labels
 
-The development branch includes a versioned, multilingual topic taxonomy and a resumable Gemini pre-labeling pipeline. It assigns multiple topics, overall sentiment, and a confidence score to each review, then lets the Agent calculate topic distributions by market, rating, and date.
+The project includes a versioned, multilingual topic taxonomy and a resumable Gemini pre-labeling pipeline. It assigns multiple topics, overall sentiment, and a confidence score to each review, then lets the Agent calculate topic distributions by market, rating, and date.
 
 ```bash
 # Start with a small, inexpensive sample
@@ -233,12 +240,12 @@ At Top 5, dense retrieval had the strongest recall and ranking quality. At Top 1
 - **Model fallback:** if the primary Gemini model is temporarily overloaded, answer generation and evidence translation retry with the configured fallback model.
 - **Measured trade-offs:** retrieval choices are justified using human labels rather than a purely qualitative demo.
 
-## Agent MVP (development branch)
+## Review Intelligence Agent
 
-The `feature/agent-mvp` branch evolves the evaluated RAG system into a
-tool-using analytics agent while keeping `/api/v1/analyze` compatible.
+The evaluated RAG system now includes a bounded, tool-using analytics Agent
+while keeping `/api/v1/analyze` compatible.
 
-The first Agent endpoint is:
+The Agent endpoint is:
 
 ```http
 POST /api/v1/agent/analyze
@@ -251,8 +258,9 @@ It routes a request into one of four auditable task types:
 - market comparison;
 - improvement-priority planning.
 
-The agent can call deterministic review statistics, evaluated Dense retrieval,
-evidence verification, and grounded generation. Its response includes the
+The Agent can call deterministic review statistics, full-dataset topic
+distribution and market-comparison tools, evaluated Dense retrieval, evidence
+verification, and grounded generation. Its response includes the
 selected task, filters, tool outputs, evidence, execution steps, timing, and
 final answer. Counts and averages are calculated in code; Gemini is not allowed
 to invent quantitative findings. Root-cause and improvement tasks default to
@@ -270,10 +278,11 @@ curl -X POST http://127.0.0.1:8000/api/v1/agent/analyze \
   }'
 ```
 
-Current MVP boundary: routing and plans are intentionally bounded rather than
-an open-ended autonomous loop. Topic-distribution labeling, conversation
-memory, replanning, and Agent task-completion evaluation remain subsequent
-milestones.
+The Agent automatically infers referenced markets and complaint/low-rating
+intent from English, Japanese, and Chinese questions when explicit UI filters
+are absent. Plans remain intentionally bounded and auditable rather than an
+open-ended autonomous loop. Conversation memory, replanning, and broader Agent
+task-completion evaluation remain future milestones.
 
 See [docs/portfolio-case-study.md](docs/portfolio-case-study.md) for the interview narrative and [docs/demo-script.md](docs/demo-script.md) for a short recording script.
 
