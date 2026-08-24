@@ -42,6 +42,11 @@ class FakeGemini:
         return "Supported answer [review-1]"
 
 
+class FailingGemini:
+    def generate_agent_answer(self, **kwargs):
+        raise RuntimeError("temporary provider error")
+
+
 def test_router_supports_three_agent_workflows() -> None:
     assert route_task("Compare Korea and Hong Kong") == "market_comparison"
     assert route_task("What are the root causes of complaints?") == (
@@ -84,3 +89,20 @@ def test_agent_executes_statistics_retrieval_verification_and_generation() -> No
     assert state.answer == "Supported answer [review-1]"
     assert all(step.status == "completed" for step in state.plan)
     assert state.analytics["verification"]["passed"]
+
+
+def test_agent_preserves_tool_outputs_when_generation_fails() -> None:
+    agent = ReviewAgent.__new__(ReviewAgent)
+    agent.tools = FakeTools()
+    agent.gemini_service = FailingGemini()
+
+    state = agent.run(
+        "What are the root causes of complaints?",
+        {"regions": [], "max_rating": None},
+    )
+
+    assert "temporarily unavailable" in state.answer
+    assert state.evidence
+    assert state.analytics["statistics"]["review_count"] == 12
+    assert state.analytics["generation_error"] == "RuntimeError"
+    assert state.plan[-1].status == "failed"

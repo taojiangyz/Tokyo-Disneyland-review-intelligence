@@ -68,7 +68,15 @@ class ReviewAgent:
             except Exception as exc:
                 step.status = "failed"
                 step.summary = str(exc)
-                raise
+                if step.tool == "grounded_generation":
+                    state.answer = (
+                        "Answer generation is temporarily unavailable. "
+                        "The deterministic analytics and retrieved evidence "
+                        "remain available."
+                    )
+                    state.analytics["generation_error"] = type(exc).__name__
+                else:
+                    raise
             finally:
                 step.duration_ms = round(
                     (perf_counter() - started) * 1000,
