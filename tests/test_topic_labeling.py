@@ -2,7 +2,12 @@ import json
 
 import pytest
 
-from scripts.build_topic_labels import completed_ids, parse_json_response, validate_labels
+from scripts.build_topic_labels import (
+    balanced_sample,
+    completed_ids,
+    parse_json_response,
+    validate_labels,
+)
 
 
 def test_parse_fenced_json_and_validate_labels():
@@ -31,3 +36,17 @@ def test_taxonomy_separates_food_price_from_overall_value():
     assert "food" in topics["food_price"]["description"].lower()
     assert "overall" in topics["value_for_money"]["description"].lower()
     assert taxonomy["version"] == "1.1"
+
+
+def test_balanced_sample_covers_market_and_rating_segments():
+    rows = [
+        {"review_id": f"{region}-{rating}-{number}", "region": region, "rating": rating}
+        for region in ["CN", "HK", "KR"]
+        for rating in [2, 5]
+        for number in range(4)
+    ]
+    sample = balanced_sample(rows, 12, seed=7)
+    segments = {(row["region"], "low" if row["rating"] <= 3 else "high") for row in sample}
+    assert len(sample) == 12
+    assert len(segments) == 6
+    assert sample == balanced_sample(rows, 12, seed=7)

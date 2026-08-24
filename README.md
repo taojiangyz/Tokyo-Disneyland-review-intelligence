@@ -154,6 +154,9 @@ The development branch includes a versioned, multilingual topic taxonomy and a r
 # Start with a small, inexpensive sample
 python scripts/build_topic_labels.py --limit 40 --batch-size 20
 
+# Representative QA sample across markets and low/high ratings
+python scripts/build_topic_labels.py --limit 60 --sample-strategy balanced
+
 # Resume later; completed review IDs are skipped automatically
 make topic-labels
 ```

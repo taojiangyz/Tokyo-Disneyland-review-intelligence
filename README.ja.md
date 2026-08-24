@@ -123,6 +123,9 @@ docker compose up --build
 # まず小規模 Sample で API 使用量を確認
 python scripts/build_topic_labels.py --limit 40 --batch-size 20
 
+# 市場および低・高評価を均等に含む QA Sample
+python scripts/build_topic_labels.py --limit 60 --sample-strategy balanced
+
 # 後日再開（完了済み review_id は自動的に Skip）
 make topic-labels
 ```

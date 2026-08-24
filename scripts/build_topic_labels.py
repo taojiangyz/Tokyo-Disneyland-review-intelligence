@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import random
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -93,6 +94,34 @@ def batches(items: list[Any], size: int):
         yield items[start : start + size]
 
 
+def balanced_sample(
+    reviews: list[dict[str, Any]],
+    limit: int,
+    seed: int = 42,
+) -> list[dict[str, Any]]:
+    """Round-robin sample across market and low/high rating segments."""
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for review in reviews:
+        rating = float(review.get("rating") or 0)
+        segment = "low" if rating <= 3 else "high"
+        key = (str(review.get("region") or "unknown"), segment)
+        groups.setdefault(key, []).append(review)
+    rng = random.Random(seed)
+    for group in groups.values():
+        rng.shuffle(group)
+    selected = []
+    ordered_keys = sorted(groups)
+    while len(selected) < limit and ordered_keys:
+        remaining_keys = []
+        for key in ordered_keys:
+            if groups[key] and len(selected) < limit:
+                selected.append(groups[key].pop())
+            if groups[key]:
+                remaining_keys.append(key)
+        ordered_keys = remaining_keys
+    return selected
+
+
 def build_prompt(batch: list[dict[str, Any]], taxonomy: dict[str, Any]) -> str:
     topic_lines = "\n".join(
         f"- {item['id']}: {item['description']}" for item in taxonomy["topics"]
@@ -144,6 +173,12 @@ def main() -> None:
     parser.add_argument("--taxonomy", type=Path, default=Path("config/topic_taxonomy.json"))
     parser.add_argument("--batch-size", type=int, default=20)
     parser.add_argument("--limit", type=int)
+    parser.add_argument(
+        "--sample-strategy",
+        choices=["sequential", "balanced"],
+        default="sequential",
+    )
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--sleep", type=float, default=0.5)
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
@@ -162,7 +197,11 @@ def main() -> None:
     done = completed_ids(args.output)
     pending = [row for row in reviews if str(row["review_id"]) not in done]
     if args.limit is not None:
-        pending = pending[: args.limit]
+        pending = (
+            balanced_sample(pending, args.limit, args.seed)
+            if args.sample_strategy == "balanced"
+            else pending[: args.limit]
+        )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     client = genai.Client(api_key=api_key)
     total = len(pending)
