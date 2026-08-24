@@ -115,6 +115,20 @@ docker compose up --build
 
 `POST /api/v1/retrieve` は Gemini を呼ばずに検索のみを実行します。`mode` は `dense`、`hybrid`、`hybrid_rerank` に対応し、`candidate_limit` で候補プールのサイズを制御できます。
 
+### AI 支援トピックラベル
+
+開発 Branch には、Version 管理された日英対応のトピック分類体系と、途中から再開できる Gemini 事前ラベル付け Pipeline が含まれます。各 Review に複数トピック、全体 Sentiment、Confidence を付与し、Agent が市場・評価・日付別のトピック分布を決定論的に集計します。
+
+```bash
+# まず小規模 Sample で API 使用量を確認
+python scripts/build_topic_labels.py --limit 40 --batch-size 20
+
+# 後日再開（完了済み review_id は自動的に Skip）
+make topic-labels
+```
+
+`data/topic_labels.jsonl` は非公開の派生 Data であり、Review 原文と同様に Git から除外されます。AI 支援ラベルは Ground Truth ではありません。本番利用では Sampling、人手修正、Taxonomy の Version 管理、品質測定が必要です。
+
 ## テストと評価
 
 Unit Test：

@@ -9,8 +9,8 @@ from app.agent.tools import ReviewTools, verify_evidence
 
 
 class ReviewAgent:
-    def __init__(self, rag_service, gemini_service) -> None:
-        self.tools = ReviewTools(rag_service)
+    def __init__(self, rag_service, gemini_service, topic_service=None) -> None:
+        self.tools = ReviewTools(rag_service, topic_service)
         self.gemini_service = gemini_service
 
     def run(
@@ -41,6 +41,22 @@ class ReviewAgent:
                     step.summary = (
                         f"Calculated over {state.analytics['statistics']['review_count']} "
                         "matching reviews"
+                    )
+                elif step.tool == "topic_distribution":
+                    result = self.tools.topic_distribution(state.filters)
+                    state.analytics["topic_distribution"] = result
+                    step.summary = (
+                        f"Counted {len(result.get('topics', []))} labeled topics"
+                        if result.get("available")
+                        else "Topic labels are not available; skipped"
+                    )
+                elif step.tool == "compare_topics_by_market":
+                    result = self.tools.compare_topics_by_market(state.filters)
+                    state.analytics["topics_by_market"] = result
+                    step.summary = (
+                        f"Compared {len(result.get('markets', {}))} markets"
+                        if result.get("available")
+                        else "Topic labels are not available; skipped"
                     )
                 elif step.tool == "search_reviews":
                     search = (

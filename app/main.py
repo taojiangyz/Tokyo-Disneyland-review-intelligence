@@ -18,6 +18,7 @@ from app.schemas import (
 from app.agent import ReviewAgent
 from app.services.gemini_service import GeminiService
 from app.services.rag_service import RagService
+from app.services.topic_service import TopicService
 from app.logging_config import configure_logging
 
 
@@ -29,9 +30,11 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     app.state.rag_service = RagService()
     app.state.gemini_service = GeminiService()
+    app.state.topic_service = TopicService()
     app.state.review_agent = ReviewAgent(
         app.state.rag_service,
         app.state.gemini_service,
+        app.state.topic_service,
     )
 
     try:

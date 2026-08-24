@@ -5,6 +5,12 @@ from app.agent.tools import verify_evidence
 
 
 class FakeTools:
+    def topic_distribution(self, filters):
+        return {"available": True, "review_count": 12, "topics": []}
+
+    def compare_topics_by_market(self, filters):
+        return {"available": True, "markets": {"KR": {"review_count": 12}}}
+
     def review_statistics(self, filters):
         return {
             "review_count": 12,
@@ -62,6 +68,7 @@ def test_planner_exposes_auditable_tools() -> None:
     tools = [step.tool for step in build_plan("market_comparison")]
     assert tools == [
         "review_statistics",
+        "compare_topics_by_market",
         "search_reviews",
         "evidence_verifier",
         "grounded_generation",

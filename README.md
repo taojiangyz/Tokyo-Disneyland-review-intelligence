@@ -146,6 +146,20 @@ make rebuild-index
 
 The pipeline checks JSON validity, required IDs/text, duplicate IDs, rating bounds, locale mapping, and ISO dates. Point IDs are deterministic UUIDs, so the same review receives the same Qdrant identity on every rebuild.
 
+### AI-assisted topic labels
+
+The development branch includes a versioned, multilingual topic taxonomy and a resumable Gemini pre-labeling pipeline. It assigns multiple topics, overall sentiment, and a confidence score to each review, then lets the Agent calculate topic distributions by market, rating, and date.
+
+```bash
+# Start with a small, inexpensive sample
+python scripts/build_topic_labels.py --limit 40 --batch-size 20
+
+# Resume later; completed review IDs are skipped automatically
+make topic-labels
+```
+
+`data/topic_labels.jsonl` is private derived data and is excluded from Git together with the review text. AI-assisted labels are not ground truth: production use requires sampling, human correction, taxonomy versioning, and quality measurement before business decisions are automated.
+
 ## Tests and regression suite
 
 Run unit tests:

@@ -8,8 +8,19 @@ from app.services.rag_service import COLLECTION_NAME, build_filter
 
 
 class ReviewTools:
-    def __init__(self, rag_service) -> None:
+    def __init__(self, rag_service, topic_service=None) -> None:
         self.rag_service = rag_service
+        self.topic_service = topic_service
+
+    def topic_distribution(self, filters: dict[str, Any]) -> dict[str, Any]:
+        if self.topic_service is None:
+            return {"available": False, "review_count": 0, "topics": []}
+        return self.topic_service.distribution(filters)
+
+    def compare_topics_by_market(self, filters: dict[str, Any]) -> dict[str, Any]:
+        if self.topic_service is None:
+            return {"available": False, "markets": {}}
+        return self.topic_service.compare_markets(filters)
 
     def search_reviews(
         self,
