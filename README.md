@@ -29,22 +29,34 @@ The project demonstrates an end-to-end applied AI workflow: reproducible data in
 
 ```mermaid
 flowchart LR
-    A["Raw multilingual reviews"] --> B["Validation and normalization"]
-    B --> C["BGE-M3 dense and sparse embeddings"]
-    B --> L["Gemini topic pre-labeling"]
-    L --> TS["Private topic label store"]
-    C --> D["Local Qdrant index"]
-    U["Manager question and filters"] --> AG["Agent router and bounded plan"]
-    AG --> API["FastAPI analysis service"]
-    AG --> TS
-    API --> D
-    D --> DR["Evaluated Dense Top 5 retrieval"]
-    DR --> G["Gemini grounded generation"]
-    TS --> G
-    G --> UI["Streamlit evidence UI"]
-    DR --> UI
-    D -. "offline evaluation" .-> EXP["Sparse + RRF + reranker modes"]
-    API --> T["Trace and timing metadata"]
+    subgraph OFF["Offline data pipeline"]
+        A["Raw multilingual reviews"] --> B["Validation and normalization"]
+        B --> C["BGE-M3 embeddings"]
+        C --> D["Local Qdrant index"]
+        B --> L["Gemini topic pre-labeling"]
+        L --> TS["Private topic label store"]
+    end
+
+    subgraph ON["Online Agent analysis"]
+        U["Manager question and optional filters"] --> UI["Streamlit UI"]
+        UI --> API["FastAPI"]
+        API --> AG["Agent router and bounded plan"]
+        AG --> ST["Deterministic statistics"]
+        AG --> TP["Topic analytics"]
+        AG --> RT["Dense Top 5 retrieval"]
+        ST --> TS
+        TP --> TS
+        RT --> D
+        RT --> EV["Evidence verification"]
+        ST --> G["Gemini grounded generation"]
+        TP --> G
+        EV --> G
+        G --> R["Answer, evidence, trace and timings"]
+        R --> API
+        API --> UI
+    end
+
+    D -. "offline evaluation only" .-> EXP["Hybrid RRF and reranker comparison"]
 ```
 
 See [docs/architecture.md](docs/architecture.md) for component responsibilities, failure behavior, and design decisions.
@@ -61,6 +73,8 @@ The indexed dataset currently contains:
 | **Total** | **2,049** |
 
 Review dates range from 2023-06-07 to 2026-02-11. Ratings range from 1 to 5. To respect reviewer privacy and source-platform redistribution restrictions, raw review text, usernames, generated candidate pools, translations, and the Qdrant database are not included in this public repository. The aggregate counts and human-verified relevance grades are retained for reproducibility of the documented evaluation methodology.
+
+Data source: reviews from verified ticket purchasers in Mainland China, South Korea, and Hong Kong, collected from Trip.com/Ctrip.com.
 
 ## Quick start
 
@@ -211,11 +225,11 @@ The internal benchmark contains 241 unique candidates across 15 questions. Candi
 
 ### Human-verified retrieval results
 
-The production endpoint uses **Dense Top 5**, selected from the same 241 human judgments because it achieved the best Recall@5 and nDCG@5 while remaining interactive.
+The interactive endpoint uses **Dense Top 5**, selected from the same 241 human judgments because it achieved the best Recall@5 and nDCG@5 while remaining responsive.
 
 | Retrieval mode | Recall@5 | nDCG@5 | Mean latency |
 |---|---:|---:|---:|
-| **Dense (production default)** | **0.365** | **0.772** | **387 ms** |
+| **Dense (interactive default)** | **0.365** | **0.772** | **387 ms** |
 | Hybrid RRF | 0.314 | 0.707 | 243 ms |
 | Hybrid + reranker (10 candidates) | 0.344 | 0.758 | 3,467 ms |
 | Hybrid + reranker (20 candidates) | 0.335 | 0.744 | 6,834 ms |
