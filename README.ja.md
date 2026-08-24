@@ -30,22 +30,34 @@ Aladdin は、東京ディズニーランドのカスタマーレビューを分
 
 ```mermaid
 flowchart LR
-    A["多言語レビュー"] --> B["検証・正規化"]
-    B --> C["BGE-M3 Dense / Sparse Embedding"]
-    B --> L["Gemini Topic 事前ラベル"]
-    L --> TS["非公開 Topic Label Store"]
-    C --> D["ローカル Qdrant Index"]
-    U["質問・フィルター"] --> AG["Agent Router・上限付き Plan"]
-    AG --> API["FastAPI 分析サービス"]
-    AG --> TS
-    API --> D
-    D --> DR["評価で選定した Dense Top 5"]
-    DR --> G["Gemini 根拠ベース生成"]
-    TS --> G
-    G --> UI["Streamlit Evidence UI"]
-    DR --> UI
-    D -. "オフライン評価" .-> EXP["Sparse + RRF + Reranker"]
-    API --> T["Trace・処理時間"]
+    subgraph OFF["オフラインデータパイプライン"]
+        A["多言語レビュー"] --> B["検証・正規化"]
+        B --> C["BGE-M3 Embedding"]
+        C --> D["ローカル Qdrant Index"]
+        B --> L["Gemini Topic 事前ラベル"]
+        L --> TS["非公開 Topic Label Store"]
+    end
+
+    subgraph ON["オンライン Agent 分析"]
+        U["質問・任意フィルター"] --> UI["Streamlit UI"]
+        UI --> API["FastAPI"]
+        API --> AG["Agent Router・上限付き Plan"]
+        AG --> ST["決定論的統計"]
+        AG --> TP["Topic 分析"]
+        AG --> RT["Dense Top 5 検索"]
+        ST --> TS
+        TP --> TS
+        RT --> D
+        RT --> EV["Evidence 検証"]
+        ST --> G["Gemini 根拠ベース生成"]
+        TP --> G
+        EV --> G
+        G --> R["回答・根拠・Trace・処理時間"]
+        R --> API
+        API --> UI
+    end
+
+    D -. "オフライン評価のみ" .-> EXP["Hybrid RRF・Reranker 比較"]
 ```
 
 コンポーネントの責務、障害時の挙動、設計判断は [docs/architecture.md](docs/architecture.md) を参照してください。
@@ -161,11 +173,11 @@ make regression
 
 15 問、241 件の Query / Review ペアに対して、0（無関係）、1（部分的に関連）、2（直接関連）の人手ラベルを作成しました。
 
-本番 API は **Dense Top 5** を使用します。5 件のエビデンスを Gemini に渡す実際の条件で、Recall@5 と nDCG@5 がともに最高だったためです。
+対話型 API は **Dense Top 5** を使用します。5 件のエビデンスを Gemini に渡す実際の条件で、Recall@5 と nDCG@5 がともに最高だったためです。
 
 | 検索方式 | Recall@5 | nDCG@5 | 平均処理時間 |
 |---|---:|---:|---:|
-| **Dense（本番デフォルト）** | **0.365** | **0.772** | **387 ms** |
+| **Dense（対話型デフォルト）** | **0.365** | **0.772** | **387 ms** |
 | Hybrid RRF | 0.314 | 0.707 | 243 ms |
 | Hybrid + Reranker（候補 10 件） | 0.344 | 0.758 | 3,467 ms |
 | Hybrid + Reranker（候補 20 件） | 0.335 | 0.744 | 6,834 ms |
