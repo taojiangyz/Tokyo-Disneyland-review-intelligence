@@ -2,7 +2,13 @@ import json
 
 import pytest
 
-from scripts.build_topic_labels import completed_ids, parse_json_response, validate_labels
+from scripts.build_topic_labels import (
+    balanced_sample,
+    completed_ids,
+    label_batch,
+    parse_json_response,
+    validate_labels,
+)
 
 
 def test_parse_fenced_json_and_validate_labels():
@@ -21,3 +27,64 @@ def test_completed_ids_supports_resume(tmp_path):
     path = tmp_path / "labels.jsonl"
     path.write_text(json.dumps({"review_id": "r1"}) + "\n", encoding="utf-8")
     assert completed_ids(path) == {"r1"}
+
+
+def test_taxonomy_separates_food_price_from_overall_value():
+    taxonomy = json.loads(
+        open("config/topic_taxonomy.json", encoding="utf-8").read()
+    )
+    topics = {item["id"]: item for item in taxonomy["topics"]}
+    assert "food" in topics["food_price"]["description"].lower()
+    assert "overall" in topics["value_for_money"]["description"].lower()
+    assert taxonomy["version"] == "1.1"
+
+
+def test_balanced_sample_covers_market_and_rating_segments():
+    rows = [
+        {"review_id": f"{region}-{rating}-{number}", "region": region, "rating": rating}
+        for region in ["CN", "HK", "KR"]
+        for rating in [2, 5]
+        for number in range(4)
+    ]
+    sample = balanced_sample(rows, 12, seed=7)
+    segments = {(row["region"], "low" if row["rating"] <= 3 else "high") for row in sample}
+    assert len(sample) == 12
+    assert len(segments) == 6
+    assert sample == balanced_sample(rows, 12, seed=7)
+
+
+def test_label_batch_retries_malformed_json():
+    class Models:
+        calls = 0
+
+        def generate_content(self, **kwargs):
+            self.calls += 1
+            text = "not json" if self.calls == 1 else json.dumps(
+                {
+                    "labels": [
+                        {
+                            "review_id": "r1",
+                            "topics": ["waiting_time"],
+                            "sentiment": "negative",
+                            "confidence": 0.9,
+                        }
+                    ]
+                }
+            )
+            return type("Response", (), {"text": text})()
+
+    client = type("Client", (), {"models": Models()})()
+    taxonomy = {
+        "topics": [{"id": "waiting_time", "description": "Queues"}],
+        "sentiments": ["negative"],
+    }
+    result = label_batch(
+        client,
+        "fake-model",
+        [{"review_id": "r1", "text": "Long queue"}],
+        taxonomy,
+        max_retries=2,
+        retry_delay=0,
+    )
+    assert result[0]["review_id"] == "r1"
+    assert client.models.calls == 2

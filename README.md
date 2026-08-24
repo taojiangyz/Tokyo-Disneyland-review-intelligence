@@ -154,11 +154,16 @@ The development branch includes a versioned, multilingual topic taxonomy and a r
 # Start with a small, inexpensive sample
 python scripts/build_topic_labels.py --limit 40 --batch-size 20
 
+# Representative QA sample across markets and low/high ratings
+python scripts/build_topic_labels.py --limit 60 --sample-strategy balanced
+
 # Resume later; completed review IDs are skipped automatically
 make topic-labels
 ```
 
 `data/topic_labels.jsonl` is private derived data and is excluded from Git together with the review text. AI-assisted labels are not ground truth: production use requires sampling, human correction, taxonomy versioning, and quality measurement before business decisions are automated.
+
+The completed v1.1 run labeled all 2,049 reviews. A 90-item human audit intentionally oversampled low-confidence outputs and rating/sentiment tensions: 81 items were verified and 9 skipped. Against the verified items, topic exact match was **93.8%**, multilabel micro-F1 was **98.2%**, and sentiment accuracy was **91.4%**. These are audit-sample results, not estimates from a simple random sample; low-support per-topic results should not be generalized. Recalculate locally with `make evaluate-topic-labels`.
 
 ## Tests and regression suite
 

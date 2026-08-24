@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import random
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -93,6 +94,34 @@ def batches(items: list[Any], size: int):
         yield items[start : start + size]
 
 
+def balanced_sample(
+    reviews: list[dict[str, Any]],
+    limit: int,
+    seed: int = 42,
+) -> list[dict[str, Any]]:
+    """Round-robin sample across market and low/high rating segments."""
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for review in reviews:
+        rating = float(review.get("rating") or 0)
+        segment = "low" if rating <= 3 else "high"
+        key = (str(review.get("region") or "unknown"), segment)
+        groups.setdefault(key, []).append(review)
+    rng = random.Random(seed)
+    for group in groups.values():
+        rng.shuffle(group)
+    selected = []
+    ordered_keys = sorted(groups)
+    while len(selected) < limit and ordered_keys:
+        remaining_keys = []
+        for key in ordered_keys:
+            if groups[key] and len(selected) < limit:
+                selected.append(groups[key].pop())
+            if groups[key]:
+                remaining_keys.append(key)
+        ordered_keys = remaining_keys
+    return selected
+
+
 def build_prompt(batch: list[dict[str, Any]], taxonomy: dict[str, Any]) -> str:
     topic_lines = "\n".join(
         f"- {item['id']}: {item['description']}" for item in taxonomy["topics"]
@@ -104,6 +133,9 @@ def build_prompt(batch: list[dict[str, Any]], taxonomy: dict[str, Any]) -> str:
     return f"""You label customer reviews for review-intelligence analytics.
 Assign one or more topics, one overall sentiment, and confidence from 0 to 1.
 Use only the allowed topic IDs. Use other only when no defined topic fits.
+Treat content about a hotel or a different destination as other; do not infer
+park topics from it. Use food_price only when food, drinks, restaurants, or
+snacks are explicitly discussed. Use value_for_money for overall cost or value.
 Do not translate, summarize, or alter review_id.
 
 Allowed topics:
@@ -120,18 +152,44 @@ Reviews:
 """
 
 
-def label_batch(client, model: str, batch, taxonomy) -> list[dict[str, Any]]:
-    response = client.models.generate_content(
-        model=model,
-        contents=build_prompt(batch, taxonomy),
-    )
-    parsed = parse_json_response(response.text or "")
-    return validate_labels(
-        parsed,
-        {str(row["review_id"]) for row in batch},
-        {item["id"] for item in taxonomy["topics"]},
-        set(taxonomy["sentiments"]),
-    )
+def label_batch(
+    client,
+    model: str,
+    batch,
+    taxonomy,
+    max_retries: int = 3,
+    retry_delay: float = 2.0,
+) -> list[dict[str, Any]]:
+    last_error: Exception | None = None
+    prompt = build_prompt(batch, taxonomy)
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+            )
+            parsed = parse_json_response(response.text or "")
+            return validate_labels(
+                parsed,
+                {str(row["review_id"]) for row in batch},
+                {item["id"] for item in taxonomy["topics"]},
+                set(taxonomy["sentiments"]),
+            )
+        except Exception as exc:
+            last_error = exc
+            if attempt == max_retries:
+                break
+            delay = retry_delay * (2 ** (attempt - 1))
+            print(
+                f"Batch attempt {attempt}/{max_retries} failed "
+                f"({type(exc).__name__}); retrying in {delay:g}s"
+            )
+            time.sleep(delay)
+    assert last_error is not None
+    raise RuntimeError(
+        f"Batch failed after {max_retries} attempts: "
+        f"{type(last_error).__name__}"
+    ) from last_error
 
 
 def main() -> None:
@@ -141,11 +199,21 @@ def main() -> None:
     parser.add_argument("--taxonomy", type=Path, default=Path("config/topic_taxonomy.json"))
     parser.add_argument("--batch-size", type=int, default=20)
     parser.add_argument("--limit", type=int)
+    parser.add_argument(
+        "--sample-strategy",
+        choices=["sequential", "balanced"],
+        default="sequential",
+    )
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--sleep", type=float, default=0.5)
+    parser.add_argument("--max-retries", type=int, default=3)
+    parser.add_argument("--retry-delay", type=float, default=2.0)
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
     if args.batch_size < 1:
         parser.error("--batch-size must be positive")
+    if args.max_retries < 1:
+        parser.error("--max-retries must be positive")
 
     load_dotenv(Path(".env"))
     api_key = os.getenv("GEMINI_API_KEY")
@@ -159,13 +227,24 @@ def main() -> None:
     done = completed_ids(args.output)
     pending = [row for row in reviews if str(row["review_id"]) not in done]
     if args.limit is not None:
-        pending = pending[: args.limit]
+        pending = (
+            balanced_sample(pending, args.limit, args.seed)
+            if args.sample_strategy == "balanced"
+            else pending[: args.limit]
+        )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     client = genai.Client(api_key=api_key)
     total = len(pending)
     with args.output.open("a", encoding="utf-8") as output:
         for offset, batch in enumerate(batches(pending, args.batch_size)):
-            labels = label_batch(client, model, batch, taxonomy)
+            labels = label_batch(
+                client,
+                model,
+                batch,
+                taxonomy,
+                max_retries=args.max_retries,
+                retry_delay=args.retry_delay,
+            )
             source_by_id = {str(row["review_id"]): row for row in batch}
             generated_at = datetime.now(timezone.utc).isoformat()
             for label in labels:

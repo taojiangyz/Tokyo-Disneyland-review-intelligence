@@ -8,6 +8,8 @@ data/qdrant_db/
 data/tdr_land_reviews_clean.jsonl
 data/disney_reviews_normalized.jsonl
 data/topic_labels.jsonl
+data/topic_audit_sample.jsonl
+data/topic_audit_reviews.jsonl
 models/
 evals/results/
 evals/annotations/candidate_pool_*.csv

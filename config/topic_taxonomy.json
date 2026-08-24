@@ -1,5 +1,5 @@
 {
-  "version": "1.0",
+  "version": "1.1",
   "multi_label": true,
   "topics": [
     {"id": "waiting_time", "en": "Waiting time", "ja": "待ち時間", "description": "Queues, waiting, and time spent before entry, rides, food, or services."},
@@ -8,13 +8,14 @@
     {"id": "ticketing_dpa", "en": "Tickets and passes", "ja": "チケット・パス", "description": "Admission tickets, booking, Premier Access, passes, and reservation systems."},
     {"id": "staff_service", "en": "Staff service", "ja": "スタッフ対応", "description": "Cast-member attitude, communication, helpfulness, and service quality."},
     {"id": "food_quality", "en": "Food quality", "ja": "飲食の品質", "description": "Taste, menu variety, portions, and dietary options."},
-    {"id": "food_price", "en": "Food price", "ja": "飲食価格", "description": "Food and beverage prices, affordability, and perceived value."},
+    {"id": "food_price", "en": "Food price", "ja": "飲食価格", "description": "Prices and value specifically for food, drinks, restaurants, or snacks; never use for admission, exchange rates, or overall park value."},
+    {"id": "value_for_money", "en": "Value for money", "ja": "コストパフォーマンス", "description": "Overall park cost, exchange-rate value, affordability, or whether the visit was worth its total price; excludes food-specific prices."},
     {"id": "cleanliness", "en": "Cleanliness", "ja": "清潔さ", "description": "Cleanliness of the park, toilets, restaurants, and facilities."},
     {"id": "children_family", "en": "Children and family", "ja": "子ども・家族", "description": "Family suitability, children’s experience, strollers, and child-related needs."},
     {"id": "accessibility", "en": "Accessibility", "ja": "アクセシビリティ", "description": "Mobility, disability access, language access, and inclusive support."},
     {"id": "facilities", "en": "Facilities", "ja": "施設", "description": "Toilets, seating, shops, lockers, transport, signs, and other amenities."},
     {"id": "overall_experience", "en": "Overall experience", "ja": "総合体験", "description": "Overall satisfaction, value, atmosphere, nostalgia, or intent to revisit."},
-    {"id": "other", "en": "Other", "ja": "その他", "description": "A meaningful topic not covered by the defined taxonomy."}
+    {"id": "other", "en": "Other or off-topic", "ja": "その他・対象外", "description": "A meaningful topic not covered by the taxonomy, or content about a hotel or another place rather than the Tokyo Disneyland park visit."}
   ],
   "sentiments": ["positive", "neutral", "negative", "mixed"]
 }

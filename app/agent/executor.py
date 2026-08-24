@@ -3,7 +3,7 @@ from time import perf_counter
 from typing import Any
 
 from app.agent.planner import build_plan
-from app.agent.router import route_task
+from app.agent.router import has_root_cause_intent, infer_markets, route_task
 from app.agent.state import AgentState
 from app.agent.tools import ReviewTools, verify_evidence
 
@@ -27,7 +27,15 @@ class ReviewAgent:
             plan=build_plan(task),
         )
 
+        if not state.filters.get("regions"):
+            inferred_markets = infer_markets(query)
+            if inferred_markets:
+                state.filters["regions"] = inferred_markets
+
         if task in {"root_cause_analysis", "improvement_planning"}:
+            if state.filters.get("max_rating") is None:
+                state.filters["max_rating"] = 3
+        elif task == "market_comparison" and has_root_cause_intent(query):
             if state.filters.get("max_rating") is None:
                 state.filters["max_rating"] = 3
 

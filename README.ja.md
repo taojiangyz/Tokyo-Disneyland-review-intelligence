@@ -123,11 +123,16 @@ docker compose up --build
 # まず小規模 Sample で API 使用量を確認
 python scripts/build_topic_labels.py --limit 40 --batch-size 20
 
+# 市場および低・高評価を均等に含む QA Sample
+python scripts/build_topic_labels.py --limit 60 --sample-strategy balanced
+
 # 後日再開（完了済み review_id は自動的に Skip）
 make topic-labels
 ```
 
 `data/topic_labels.jsonl` は非公開の派生 Data であり、Review 原文と同様に Git から除外されます。AI 支援ラベルは Ground Truth ではありません。本番利用では Sampling、人手修正、Taxonomy の Version 管理、品質測定が必要です。
+
+v1.1 では全 2,049 件をラベル付けしました。低 Confidence および評価と Sentiment の不一致候補を意図的に多く含む 90 件を人手監査し、81 件を確認、9 件を Skip しました。確認済み Sample に対して、Topic 完全一致率は **93.8%**、Multi-label Micro-F1 は **98.2%**、Sentiment 正解率は **91.4%** でした。単純無作為抽出による母集団推定ではなく、Support の少ない Topic の結果は一般化できません。`make evaluate-topic-labels` でローカル再計算できます。
 
 ## テストと評価
 

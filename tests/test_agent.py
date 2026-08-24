@@ -1,6 +1,6 @@
 from app.agent.executor import ReviewAgent
 from app.agent.planner import build_plan
-from app.agent.router import route_task
+from app.agent.router import infer_markets, route_task
 from app.agent.tools import verify_evidence
 
 
@@ -58,10 +58,22 @@ def test_router_supports_three_agent_workflows() -> None:
     assert route_task("What are the root causes of complaints?") == (
         "root_cause_analysis"
     )
+    assert route_task("What are the main causes of low-rated reviews?") == (
+        "root_cause_analysis"
+    )
+    assert route_task("低评分评论的主要原因是什么？") == "root_cause_analysis"
+    assert route_task("低評価レビューの主な原因は何ですか？") == (
+        "root_cause_analysis"
+    )
     assert route_task("What should management prioritize improving?") == (
         "improvement_planning"
     )
     assert route_task("What do visitors say about food?") == "evidence_qa"
+
+
+def test_router_infers_multilingual_market_names() -> None:
+    assert infer_markets("Compare Korean and Hong Kong visitors") == ["HK", "KR"]
+    assert infer_markets("比较中国大陆和韩国游客") == ["CN", "KR"]
 
 
 def test_planner_exposes_auditable_tools() -> None:
@@ -113,3 +125,16 @@ def test_agent_preserves_tool_outputs_when_generation_fails() -> None:
     assert state.analytics["statistics"]["review_count"] == 12
     assert state.analytics["generation_error"] == "RuntimeError"
     assert state.plan[-1].status == "failed"
+
+
+def test_market_complaint_comparison_infers_markets_and_low_ratings() -> None:
+    agent = ReviewAgent.__new__(ReviewAgent)
+    agent.tools = FakeTools()
+    agent.gemini_service = FakeGemini()
+    state = agent.run(
+        "Compare the main complaints from Korean and Hong Kong visitors.",
+        {"regions": [], "max_rating": None},
+    )
+    assert state.task == "market_comparison"
+    assert state.filters["regions"] == ["HK", "KR"]
+    assert state.filters["max_rating"] == 3
