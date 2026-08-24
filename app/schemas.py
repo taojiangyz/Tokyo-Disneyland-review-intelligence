@@ -138,3 +138,26 @@ class RetrieveResponse(BaseModel):
     evidence: list[EvidenceItem]
     filters: dict[str, object]
     trace: dict[str, object]
+
+
+class AgentAnalyzeRequest(AnalyzeRequest):
+    evidence_limit: int = Field(default=5, ge=3, le=10)
+
+
+class AgentStepResponse(BaseModel):
+    name: str
+    tool: str
+    status: str
+    summary: str | None = None
+    duration_ms: float | None = None
+
+
+class AgentAnalyzeResponse(BaseModel):
+    query: str
+    task: str
+    answer: str
+    evidence: list[EvidenceItem]
+    analytics: dict[str, object]
+    filters: dict[str, object]
+    steps: list[AgentStepResponse]
+    trace: dict[str, object]

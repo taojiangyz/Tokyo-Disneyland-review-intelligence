@@ -6,6 +6,8 @@ from uuid import uuid4
 from fastapi import FastAPI, Request
 
 from app.schemas import (
+    AgentAnalyzeRequest,
+    AgentAnalyzeResponse,
     AnalyzeRequest,
     AnalyzeResponse,
     EvidenceItem,
@@ -13,6 +15,7 @@ from app.schemas import (
     RetrieveRequest,
     RetrieveResponse,
 )
+from app.agent import ReviewAgent
 from app.services.gemini_service import GeminiService
 from app.services.rag_service import RagService
 from app.logging_config import configure_logging
@@ -26,6 +29,10 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     app.state.rag_service = RagService()
     app.state.gemini_service = GeminiService()
+    app.state.review_agent = ReviewAgent(
+        app.state.rag_service,
+        app.state.gemini_service,
+    )
 
     try:
         yield
@@ -306,4 +313,67 @@ def analyze_reviews(
         evidence=evidence,
         filters=filters,
         trace=trace,
+    )
+
+
+@app.post(
+    "/api/v1/agent/analyze",
+    response_model=AgentAnalyzeResponse,
+)
+def agent_analyze_reviews(
+    request_body: AgentAnalyzeRequest,
+    request: Request,
+) -> AgentAnalyzeResponse:
+    request_start = perf_counter()
+    date_from = (
+        request_body.date_from.isoformat()
+        if request_body.date_from
+        else None
+    )
+    date_to = (
+        request_body.date_to.isoformat()
+        if request_body.date_to
+        else None
+    )
+    filters: dict[str, object] = {
+        "regions": request_body.selected_regions(),
+        "min_rating": request_body.min_rating,
+        "max_rating": request_body.max_rating,
+        "date_from": date_from,
+        "date_to": date_to,
+    }
+    state = request.app.state.review_agent.run(
+        query=request_body.query,
+        filters=filters,
+        evidence_limit=request_body.evidence_limit,
+    )
+    evidence = [
+        EvidenceItem(
+            review_id=item["review_id"],
+            region=item.get("region"),
+            rating=item.get("rating"),
+            review_date=item.get("review_date"),
+            text=item.get("text", ""),
+            rrf_score=item.get("score"),
+            reranker_score=None,
+        )
+        for item in state.evidence
+    ]
+    return AgentAnalyzeResponse(
+        query=state.query,
+        task=state.task,
+        answer=state.answer,
+        evidence=evidence,
+        analytics=state.analytics,
+        filters=state.filters,
+        steps=[step.__dict__ for step in state.plan],
+        trace={
+            "agent_version": "mvp-v1",
+            "tool_count": len(state.plan),
+            "model": request.app.state.gemini_service.last_model_name,
+            "total_ms": round(
+                (perf_counter() - request_start) * 1000,
+                2,
+            ),
+        },
     )

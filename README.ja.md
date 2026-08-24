@@ -163,6 +163,27 @@ Top 5 では Dense が Recall とランキング品質の両方で最高でし�
 - Gemini 障害時も取得済みレビューを表示し、`degraded` ステータスを返却
 - Gemini の Primary Model が一時的に過負荷の場合、設定済みの Fallback Model で回答生成と翻訳を再試行
 - 回答の引用 ID が返却エビデンスに含まれることを回帰テストで確認
+
+## Agent MVP（開発 Branch）
+
+`feature/agent-mvp` Branch では、既存 RAG API の互換性を保ちながら、
+評価済みの検索基盤を Tool-Using Analytics Agent に拡張します。
+
+新しい `POST /api/v1/agent/analyze` は、質問を次の Task に振り分けます。
+
+- 根拠付き Q&A
+- Complaint Root-Cause Analysis
+- Market Comparison
+- Improvement Priority Planning
+
+Agent は、決定論的な Review Statistics、Dense Retrieval、Evidence
+Verification、Grounded Generation を順番に実行し、Task、Filter、Tool
+Output、Evidence、実行 Step、処理時間、最終回答を返します。件数・平均値は
+Code で計算し、Gemini に数値を推測させません。Root-Cause / Improvement
+Task は、Rating 条件が指定されない場合に 1～3 Star を対象とします。
+
+現段階では安全で評価可能な固定上限付き Plan を採用しています。Topic Label、
+会話 Memory、Replanning、Agent Task Completion Evaluation は次の Milestone です。
 - API ログは JSON Lines 形式で Request ID、Method、Path、Status、処理時間を記録
 - `X-Request-ID` レスポンスヘッダーでログを追跡可能
 - データ検証と決定論的 Qdrant Point ID による再現性

@@ -214,6 +214,48 @@ At Top 5, dense retrieval had the strongest recall and ranking quality. At Top 1
 - **Model fallback:** if the primary Gemini model is temporarily overloaded, answer generation and evidence translation retry with the configured fallback model.
 - **Measured trade-offs:** retrieval choices are justified using human labels rather than a purely qualitative demo.
 
+## Agent MVP (development branch)
+
+The `feature/agent-mvp` branch evolves the evaluated RAG system into a
+tool-using analytics agent while keeping `/api/v1/analyze` compatible.
+
+The first Agent endpoint is:
+
+```http
+POST /api/v1/agent/analyze
+```
+
+It routes a request into one of four auditable task types:
+
+- evidence-grounded Q&A;
+- complaint root-cause analysis;
+- market comparison;
+- improvement-priority planning.
+
+The agent can call deterministic review statistics, evaluated Dense retrieval,
+evidence verification, and grounded generation. Its response includes the
+selected task, filters, tool outputs, evidence, execution steps, timing, and
+final answer. Counts and averages are calculated in code; Gemini is not allowed
+to invent quantitative findings. Root-cause and improvement tasks default to
+reviews rated 1–3 unless the caller supplies a rating range.
+
+Example:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/agent/analyze \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "query": "Compare queue complaints from Korean and Hong Kong visitors",
+    "regions": ["KR", "HK"],
+    "evidence_limit": 5
+  }'
+```
+
+Current MVP boundary: routing and plans are intentionally bounded rather than
+an open-ended autonomous loop. Topic-distribution labeling, conversation
+memory, replanning, and Agent task-completion evaluation remain subsequent
+milestones.
+
 See [docs/portfolio-case-study.md](docs/portfolio-case-study.md) for the interview narrative and [docs/demo-script.md](docs/demo-script.md) for a short recording script.
 
 ## Retrieval trace
