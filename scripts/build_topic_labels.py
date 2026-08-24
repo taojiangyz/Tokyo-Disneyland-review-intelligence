@@ -152,18 +152,44 @@ Reviews:
 """
 
 
-def label_batch(client, model: str, batch, taxonomy) -> list[dict[str, Any]]:
-    response = client.models.generate_content(
-        model=model,
-        contents=build_prompt(batch, taxonomy),
-    )
-    parsed = parse_json_response(response.text or "")
-    return validate_labels(
-        parsed,
-        {str(row["review_id"]) for row in batch},
-        {item["id"] for item in taxonomy["topics"]},
-        set(taxonomy["sentiments"]),
-    )
+def label_batch(
+    client,
+    model: str,
+    batch,
+    taxonomy,
+    max_retries: int = 3,
+    retry_delay: float = 2.0,
+) -> list[dict[str, Any]]:
+    last_error: Exception | None = None
+    prompt = build_prompt(batch, taxonomy)
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+            )
+            parsed = parse_json_response(response.text or "")
+            return validate_labels(
+                parsed,
+                {str(row["review_id"]) for row in batch},
+                {item["id"] for item in taxonomy["topics"]},
+                set(taxonomy["sentiments"]),
+            )
+        except Exception as exc:
+            last_error = exc
+            if attempt == max_retries:
+                break
+            delay = retry_delay * (2 ** (attempt - 1))
+            print(
+                f"Batch attempt {attempt}/{max_retries} failed "
+                f"({type(exc).__name__}); retrying in {delay:g}s"
+            )
+            time.sleep(delay)
+    assert last_error is not None
+    raise RuntimeError(
+        f"Batch failed after {max_retries} attempts: "
+        f"{type(last_error).__name__}"
+    ) from last_error
 
 
 def main() -> None:
@@ -180,10 +206,14 @@ def main() -> None:
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--sleep", type=float, default=0.5)
+    parser.add_argument("--max-retries", type=int, default=3)
+    parser.add_argument("--retry-delay", type=float, default=2.0)
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
     if args.batch_size < 1:
         parser.error("--batch-size must be positive")
+    if args.max_retries < 1:
+        parser.error("--max-retries must be positive")
 
     load_dotenv(Path(".env"))
     api_key = os.getenv("GEMINI_API_KEY")
@@ -207,7 +237,14 @@ def main() -> None:
     total = len(pending)
     with args.output.open("a", encoding="utf-8") as output:
         for offset, batch in enumerate(batches(pending, args.batch_size)):
-            labels = label_batch(client, model, batch, taxonomy)
+            labels = label_batch(
+                client,
+                model,
+                batch,
+                taxonomy,
+                max_retries=args.max_retries,
+                retry_delay=args.retry_delay,
+            )
             source_by_id = {str(row["review_id"]): row for row in batch}
             generated_at = datetime.now(timezone.utc).isoformat()
             for label in labels:
