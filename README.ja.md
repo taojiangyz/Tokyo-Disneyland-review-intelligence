@@ -8,7 +8,7 @@ Aladdin は、東京ディズニーランドのカスタマーレビューを分
 
 ![Tokyo Disney Review Intelligence Agent デモ](assets/demo/tokyo_disney_agent_demo.gif)
 
-この短縮デモでは、日本語 UI への切り替え、自由形式の業務質問、動的フィルター、根拠に基づく回答生成、参照レビューの展開を確認できます。
+このデモでは、日本語による市場比較質問、Agent の自動 Routing・Filter、監査可能な Tool Trace、全件 Topic 分析、根拠に基づく回答生成、参照レビューの展開を確認できます。
 
 本プロジェクトは、再現可能なデータ処理、人手評価で選定した Dense 検索、比較実験用の Hybrid / Reranker、根拠に基づく回答生成、回帰評価、可観測性、業務向け UI を含む、Applied AI のエンドツーエンド実装です。
 
@@ -16,6 +16,8 @@ Aladdin は、東京ディズニーランドのカスタマーレビューを分
 
 - 英語・日本語・中国語などの自由形式質問に対応
 - 2,049 件のレビューを市場、日付、評価で絞り込み
+- 質問を根拠付き Q&A、Root-Cause、Market Comparison、Improvement Planning に自動分類
+- 全 2,049 件の AI 支援ラベルから市場・Topic・Sentiment を決定論的に集計
 - 対話処理では、人手評価で選定した BGE-M3 Dense Top 5 を使用
 - Sparse / RRF と `BAAI/bge-reranker-v2-m3` は再現可能なオフライン比較用として保持
 - Gemini による、レビュー ID を引用した根拠ベースの回答生成
@@ -30,11 +32,16 @@ Aladdin は、東京ディズニーランドのカスタマーレビューを分
 flowchart LR
     A["多言語レビュー"] --> B["検証・正規化"]
     B --> C["BGE-M3 Dense / Sparse Embedding"]
+    B --> L["Gemini Topic 事前ラベル"]
+    L --> TS["非公開 Topic Label Store"]
     C --> D["ローカル Qdrant Index"]
-    U["質問・フィルター"] --> API["FastAPI 分析サービス"]
+    U["質問・フィルター"] --> AG["Agent Router・上限付き Plan"]
+    AG --> API["FastAPI 分析サービス"]
+    AG --> TS
     API --> D
     D --> DR["評価で選定した Dense Top 5"]
     DR --> G["Gemini 根拠ベース生成"]
+    TS --> G
     G --> UI["Streamlit Evidence UI"]
     DR --> UI
     D -. "オフライン評価" .-> EXP["Sparse + RRF + Reranker"]
@@ -117,7 +124,7 @@ docker compose up --build
 
 ### AI 支援トピックラベル
 
-開発 Branch には、Version 管理された日英対応のトピック分類体系と、途中から再開できる Gemini 事前ラベル付け Pipeline が含まれます。各 Review に複数トピック、全体 Sentiment、Confidence を付与し、Agent が市場・評価・日付別のトピック分布を決定論的に集計します。
+本 Project には、Version 管理された日英対応のトピック分類体系と、途中から再開できる Gemini 事前ラベル付け Pipeline が含まれます。各 Review に複数トピック、全体 Sentiment、Confidence を付与し、Agent が市場・評価・日付別のトピック分布を決定論的に集計します。
 
 ```bash
 # まず小規模 Sample で API 使用量を確認
@@ -183,10 +190,10 @@ Top 5 では Dense が Recall とランキング品質の両方で最高でし�
 - Gemini の Primary Model が一時的に過負荷の場合、設定済みの Fallback Model で回答生成と翻訳を再試行
 - 回答の引用 ID が返却エビデンスに含まれることを回帰テストで確認
 
-## Agent MVP（開発 Branch）
+## Review Intelligence Agent
 
-`feature/agent-mvp` Branch では、既存 RAG API の互換性を保ちながら、
-評価済みの検索基盤を Tool-Using Analytics Agent に拡張します。
+既存 RAG API の互換性を保ちながら、評価済みの検索基盤を
+Tool-Using Analytics Agent に拡張しました。
 
 新しい `POST /api/v1/agent/analyze` は、質問を次の Task に振り分けます。
 
@@ -195,14 +202,17 @@ Top 5 では Dense が Recall とランキング品質の両方で最高でし�
 - Market Comparison
 - Improvement Priority Planning
 
-Agent は、決定論的な Review Statistics、Dense Retrieval、Evidence
-Verification、Grounded Generation を順番に実行し、Task、Filter、Tool
+Agent は、決定論的な Review Statistics、全件 Topic Distribution、
+Market Comparison、Dense Retrieval、Evidence Verification、Grounded
+Generation を順番に実行し、Task、Filter、Tool
 Output、Evidence、実行 Step、処理時間、最終回答を返します。件数・平均値は
 Code で計算し、Gemini に数値を推測させません。Root-Cause / Improvement
 Task は、Rating 条件が指定されない場合に 1～3 Star を対象とします。
 
-現段階では安全で評価可能な固定上限付き Plan を採用しています。Topic Label、
-会話 Memory、Replanning、Agent Task Completion Evaluation は次の Milestone です。
+英語・日本語・中国語の質問から市場名と Complaint / Low-Rating Intent を
+自動抽出し、UI Filter が未指定の場合に適用します。現段階では安全で評価可能な
+固定上限付き Plan を採用し、会話 Memory、Replanning、より広い Agent Task
+Completion Evaluation は次の Milestone です。
 - API ログは JSON Lines 形式で Request ID、Method、Path、Status、処理時間を記録
 - `X-Request-ID` レスポンスヘッダーでログを追跡可能
 - データ検証と決定論的 Qdrant Point ID による再現性
