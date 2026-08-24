@@ -27,6 +27,12 @@ COPY = {
         "agent_trace": "Agent execution trace",
         "agent_task": "Selected task",
         "agent_statistics": "Deterministic statistics",
+        "topic_insights": "AI-assisted topic insights",
+        "topic_coverage": "Topic labels cover {labeled:,} of {matching:,} matching reviews ({share:.1%}). Treat partial coverage as directional, not conclusive.",
+        "topic": "Topic",
+        "review_share": "Review share",
+        "sentiment_distribution": "Sentiment distribution",
+        "topics_unavailable": "Topic labels are not available for this analysis yet.",
         "example_questions": "Example questions",
         "example_help": "Choose an example or edit the question below.",
         "ask": "Ask any question about the customer reviews",
@@ -78,6 +84,12 @@ COPY = {
         "agent_trace": "Agent実行トレース",
         "agent_task": "選択されたTask",
         "agent_statistics": "決定論的な統計",
+        "topic_insights": "AI支援トピック分析",
+        "topic_coverage": "該当レビュー{matching:,}件のうち{labeled:,}件にトピックラベルがあります（{share:.1%}）。一部のみの場合は参考傾向であり、最終結論ではありません。",
+        "topic": "トピック",
+        "review_share": "レビュー比率",
+        "sentiment_distribution": "感情分布",
+        "topics_unavailable": "この分析で利用できるトピックラベルはまだありません。",
         "example_questions": "質問例",
         "example_help": "質問例を選ぶか、下の入力欄で自由に編集してください。",
         "ask": "カスタマーレビューについて自由に質問してください",
@@ -742,6 +754,76 @@ if analyze_clicked:
                 if statistics:
                     with st.expander(t["agent_statistics"]):
                         st.json(statistics)
+
+                analytics = result.get("analytics", {})
+                topic_result = analytics.get("topic_distribution")
+                market_topics = analytics.get("topics_by_market")
+                if topic_result or market_topics:
+                    with st.container(border=True):
+                        st.subheader(t["topic_insights"])
+                        if topic_result and topic_result.get("available"):
+                            labeled = int(topic_result.get("review_count", 0))
+                            matching = int(
+                                (statistics or {}).get("review_count", labeled)
+                            )
+                            share = labeled / matching if matching else 0
+                            st.caption(
+                                t["topic_coverage"].format(
+                                    labeled=labeled,
+                                    matching=matching,
+                                    share=share,
+                                )
+                            )
+                            topic_rows = topic_result.get("topics", [])
+                            if topic_rows:
+                                st.bar_chart(
+                                    topic_rows,
+                                    x="topic",
+                                    y="review_share",
+                                    horizontal=True,
+                                )
+                                st.dataframe(
+                                    [
+                                        {
+                                            t["topic"]: row.get("topic"),
+                                            "Count": row.get("count"),
+                                            t["review_share"]: (
+                                                f"{float(row.get('review_share', 0)):.1%}"
+                                            ),
+                                        }
+                                        for row in topic_rows
+                                    ],
+                                    use_container_width=True,
+                                    hide_index=True,
+                                )
+                            sentiments = topic_result.get("sentiments", {})
+                            if sentiments:
+                                st.caption(t["sentiment_distribution"])
+                                st.json(sentiments)
+                        elif market_topics and market_topics.get("available"):
+                            market_rows = []
+                            for market, market_data in market_topics.get(
+                                "markets", {}
+                            ).items():
+                                for row in market_data.get("topics", []):
+                                    market_rows.append(
+                                        {
+                                            t["market"]: market,
+                                            t["topic"]: row.get("topic"),
+                                            "Count": row.get("count"),
+                                            t["review_share"]: (
+                                                f"{float(row.get('review_share', 0)):.1%}"
+                                            ),
+                                        }
+                                    )
+                            if market_rows:
+                                st.dataframe(
+                                    market_rows,
+                                    use_container_width=True,
+                                    hide_index=True,
+                                )
+                        else:
+                            st.info(t["topics_unavailable"])
 
         with st.spinner(
             t["translating"]
