@@ -114,6 +114,18 @@ docker compose up --build
 
 初回起動時は Embedding / Reranker モデルの取得に数分かかる場合があります。
 
+### 面接用の制御付き一時公開
+
+任意の `interview` Compose Profile は API を localhost に限定したまま、一時的な Cloudflare Quick Tunnel を追加します。`.env` に強力な `ALADDIN_DEMO_PASSWORD`、別の `ALADDIN_API_TOKEN`、Request / Generation 上限を設定して実行します。
+
+```bash
+make demo-up
+# 面接終了後
+make demo-down
+```
+
+Tunnel Log に表示される一時的な `trycloudflare.com` URL は停止後に無効になります。これはローカル実行 Application への制御付き外部アクセスであり、恒久的な Cloud Deployment ではありません。安全確認と外部回線 Test は [docs/interview-demo.md](docs/interview-demo.md) を参照してください。
+
 ## API
 
 `GET /api/v1/metadata` は、市場や日付などのフィルター候補とレビュー件数を返します。
@@ -168,6 +180,20 @@ make regression
 ```
 
 完全な回帰テストは Gemini を呼び出すため、API 使用料が発生する可能性があります。
+
+別の Agent 評価 Suite には、Task Routing、市場推論、苦情・低評価 Intent、明示 Filter 優先、Tool Plan、決定論的統計、Citation、Evidence なし、Provider 障害 Contract を扱う **英語・日本語・中国語 40 問**があります。構造評価は Gemini を呼ばず無料で実行できます。
+
+```bash
+make agent-eval
+```
+
+必要な場合のみ、ローカル Agent API に対して End-to-End 評価を実行します。
+
+```bash
+make agent-eval-live
+```
+
+Live 評価は Gemini を呼ぶ可能性があり、設定した1日あたりの Generation 上限で保護されます。Provider 障害は実際の障害を起こさず、Unit Test の決定論的 Fake で検証します。
 
 ## 人手評価済み検索結果
 

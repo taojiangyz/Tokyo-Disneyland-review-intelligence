@@ -8,6 +8,27 @@ from app.agent.state import AgentState
 from app.agent.tools import ReviewTools, verify_evidence
 
 
+def resolve_agent_filters(
+    query: str,
+    task: str,
+    filters: dict[str, Any],
+) -> dict[str, Any]:
+    """Apply deterministic query-derived filters without overriding UI choices."""
+    resolved = dict(filters)
+    if not resolved.get("regions"):
+        inferred_markets = infer_markets(query)
+        if inferred_markets:
+            resolved["regions"] = inferred_markets
+
+    needs_low_ratings = task in {
+        "root_cause_analysis",
+        "improvement_planning",
+    } or (task == "market_comparison" and has_root_cause_intent(query))
+    if needs_low_ratings and resolved.get("max_rating") is None:
+        resolved["max_rating"] = 3
+    return resolved
+
+
 class ReviewAgent:
     def __init__(self, rag_service, gemini_service, topic_service=None) -> None:
         self.tools = ReviewTools(rag_service, topic_service)
@@ -23,21 +44,9 @@ class ReviewAgent:
         state = AgentState(
             query=query,
             task=task,
-            filters=dict(filters),
+            filters=resolve_agent_filters(query, task, filters),
             plan=build_plan(task),
         )
-
-        if not state.filters.get("regions"):
-            inferred_markets = infer_markets(query)
-            if inferred_markets:
-                state.filters["regions"] = inferred_markets
-
-        if task in {"root_cause_analysis", "improvement_planning"}:
-            if state.filters.get("max_rating") is None:
-                state.filters["max_rating"] = 3
-        elif task == "market_comparison" and has_root_cause_intent(query):
-            if state.filters.get("max_rating") is None:
-                state.filters["max_rating"] = 3
 
         for step in state.plan:
             started = perf_counter()
@@ -86,8 +95,20 @@ class ReviewAgent:
                         else "Evidence insufficient"
                     )
                 elif step.tool == "grounded_generation":
-                    state.answer = self._generate_answer(state)
-                    step.summary = "Generated answer from tool outputs"
+                    verification = state.analytics.get("verification", {})
+                    if not state.evidence and not verification.get("passed"):
+                        state.answer = (
+                            "No reviews matched the selected filters, so there is "
+                            "not enough evidence to answer this question."
+                        )
+                        state.analytics["generation"] = {
+                            "status": "skipped_no_evidence"
+                        }
+                        step.summary = "Skipped generation because no evidence matched"
+                    else:
+                        state.answer = self._generate_answer(state)
+                        state.analytics["generation"] = {"status": "completed"}
+                        step.summary = "Generated answer from tool outputs"
                 step.status = "completed"
             except Exception as exc:
                 step.status = "failed"
@@ -99,6 +120,7 @@ class ReviewAgent:
                         "remain available."
                     )
                     state.analytics["generation_error"] = type(exc).__name__
+                    state.analytics["generation"] = {"status": "degraded"}
                 else:
                     raise
             finally:

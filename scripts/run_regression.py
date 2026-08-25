@@ -1,11 +1,13 @@
 import argparse
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import re
 from typing import Any
 
 import requests
+from dotenv import load_dotenv
 
 DEFAULT_CASES = Path("evals/regression_cases.jsonl")
 DEFAULT_OUTPUT = Path("evals/results/latest.json")
@@ -77,6 +79,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    load_dotenv()
     args = parse_args()
     cases = load_cases(args.cases)
     if args.case_id:
@@ -87,6 +90,10 @@ def main() -> None:
         raise SystemExit("No matching regression cases")
 
     results = []
+    headers = {}
+    api_token = os.getenv("ALADDIN_API_TOKEN", "").strip()
+    if api_token:
+        headers["X-Aladdin-Token"] = api_token
     for index, case in enumerate(cases, start=1):
         payload = {"query": case["question"], **case["payload"]}
         print(f"[{index}/{len(cases)}] {case['id']}", flush=True)
@@ -94,6 +101,7 @@ def main() -> None:
             api_response = requests.post(
                 f"{args.base_url}/api/v1/analyze",
                 json=payload,
+                headers=headers,
                 timeout=180,
             )
             api_response.raise_for_status()

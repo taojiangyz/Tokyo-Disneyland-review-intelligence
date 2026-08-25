@@ -6,30 +6,33 @@
 
 Show the title, indexed-review count, free-form question field, and filters.
 
-## 0:20–1:05 — Core workflow
+## 0:20–1:10 — Agent workflow
 
-Ask: “What are the main complaints about waiting time and crowding at Tokyo Disney?”
+Select Agent Analysis and ask in Japanese: “韓国と香港の来園者の主な不満を比較してください。”
 
-Keep all markets selected and use five evidence reviews. Point out:
+Leave the market and rating filters unselected. Point out:
 
+- automatic market inference and the low-rating default;
+- the selected `market_comparison` task;
+- deterministic review and topic statistics calculated over the matching segment;
+- the bounded, auditable tool trace;
 - the generated executive summary;
-- applied filters and evidence count;
 - expandable source reviews;
 - review ID, market, rating, date, translation, and original text.
 
-Say: “The model is instructed to answer only from these retrieved reviews, and returned citations are checked against the evidence set.”
+Say: “Gemini does not read all 2,049 reviews. Code calculates the full-segment statistics, retrieval selects five qualitative examples, and Gemini receives only those tool outputs and evidence. Returned citations are checked against the evidence set.”
 
-## 1:05–1:30 — Dynamic analysis
+## 1:10–1:35 — Dynamic analysis
 
 Change the market to Korea or China and restrict ratings to 1–3. Rerun either the same question or “What are the main complaints in low-rated reviews?”
 
 Say: “Filters are applied during retrieval, not after generation, so the evidence and answer represent the selected customer segment.”
 
-## 1:30–2:10 — Evaluation
+## 1:35–2:15 — Evaluation
 
 Show the README evaluation table.
 
-Say: “I created 241 human relevance judgments across 15 questions and compared dense, hybrid, and reranked retrieval. The 20-candidate reranker had the best nDCG, but took about 6.2 seconds on CPU. Dense retrieval was almost as accurate and much faster, so I recommend it as the interactive default.”
+Say: “I created 241 human relevance judgments across 15 questions and compared dense, hybrid, and reranked retrieval. Dense had the best Top-5 recall and ranking quality for the actual five-evidence UI, so it is the interactive default. I also maintain 40 multilingual Agent cases for routing, inferred filters, tool plans, deterministic statistics, citation containment, and failure behavior.”
 
 ## 2:10–2:35 — Reliability
 
@@ -39,11 +42,11 @@ Optionally demonstrate the degraded state only after recording a successful main
 
 ## 2:35–2:55 — Close
 
-“This project demonstrates the full applied-AI workflow: data ingestion, retrieval, grounded generation, human evaluation, observability, testing, and containerization. The next production steps would be expanding the evaluation set, using server Qdrant, adding authentication, and deploying to cloud infrastructure.”
+“This project demonstrates the full applied-AI workflow: data ingestion, retrieval, grounded generation, human evaluation, Agent evaluation, observability, testing, containerization, and controlled external demonstration. Permanent cloud infrastructure and multi-tenant authentication remain production extensions.”
 
 ## Recording checklist
 
-- Start FastAPI and Streamlit before recording.
+- Run `make demo-up` before a remote interactive interview, or start FastAPI and Streamlit locally before recording.
 - Confirm Gemini works with one test question.
 - Use browser zoom that keeps evidence and metrics readable.
 - Hide terminals, `.env`, API keys, and personal notifications.

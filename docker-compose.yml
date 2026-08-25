@@ -2,8 +2,11 @@ services:
   api:
     build: .
     env_file: .env
+    environment:
+      ALADDIN_RATE_LIMIT_PER_MINUTE: ${ALADDIN_RATE_LIMIT_PER_MINUTE:-20}
+      ALADDIN_MAX_GENERATIONS_PER_DAY: ${ALADDIN_MAX_GENERATIONS_PER_DAY:-50}
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./data:/app/data
       - model-cache:/root/.cache
@@ -21,10 +24,25 @@ services:
     environment:
       ALADDIN_API_BASE_URL: http://api:8000
     ports:
-      - "8501:8501"
+      - "127.0.0.1:8501:8501"
     depends_on:
       api:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8501/_stcore/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    profiles: ["interview"]
+    command: ["tunnel", "--no-autoupdate", "--url", "http://ui:8501"]
+    depends_on:
+      ui:
+        condition: service_healthy
+    restart: "no"
 
 volumes:
   model-cache:

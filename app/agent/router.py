@@ -1,3 +1,5 @@
+import re
+
 from app.agent.state import AgentTask
 
 
@@ -18,8 +20,13 @@ IMPROVEMENT_TERMS = (
     "priority",
     "recommend",
     "improve",
+    "improvement",
+    "improvements",
     "action",
     "改善",
+    "行动",
+    "行動",
+    "対策",
     "优先",
     "優先",
     "建议",
@@ -28,7 +35,9 @@ IMPROVEMENT_TERMS = (
 ROOT_CAUSE_TERMS = (
     "root cause",
     "cause",
+    "causes",
     "complaint",
+    "complaints",
     "dissatisfaction",
     "negative review",
     "low-rated",
@@ -56,8 +65,20 @@ MARKET_ALIASES = {
 
 
 def has_root_cause_intent(query: str) -> bool:
-    normalized = f" {query.casefold()} "
-    return any(term in normalized for term in ROOT_CAUSE_TERMS)
+    normalized = query.casefold()
+    return any(_contains_term(normalized, term) for term in ROOT_CAUSE_TERMS)
+
+
+def _contains_term(normalized_query: str, term: str) -> bool:
+    candidate = term.casefold().strip()
+    if candidate.isascii():
+        return bool(
+            re.search(
+                rf"(?<![a-z]){re.escape(candidate)}(?![a-z])",
+                normalized_query,
+            )
+        )
+    return candidate in normalized_query
 
 
 def infer_markets(query: str) -> list[str]:
@@ -70,10 +91,10 @@ def infer_markets(query: str) -> list[str]:
 
 
 def route_task(query: str) -> AgentTask:
-    normalized = f" {query.casefold()} "
-    if any(term in normalized for term in COMPARISON_TERMS):
+    normalized = query.casefold()
+    if any(_contains_term(normalized, term) for term in COMPARISON_TERMS):
         return "market_comparison"
-    if any(term in normalized for term in IMPROVEMENT_TERMS):
+    if any(_contains_term(normalized, term) for term in IMPROVEMENT_TERMS):
         return "improvement_planning"
     if has_root_cause_intent(query):
         return "root_cause_analysis"

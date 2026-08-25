@@ -1,4 +1,4 @@
-from app.agent.executor import ReviewAgent
+from app.agent.executor import ReviewAgent, resolve_agent_filters
 from app.agent.planner import build_plan
 from app.agent.router import infer_markets, route_task
 from app.agent.tools import verify_evidence
@@ -138,3 +138,36 @@ def test_market_complaint_comparison_infers_markets_and_low_ratings() -> None:
     assert state.task == "market_comparison"
     assert state.filters["regions"] == ["HK", "KR"]
     assert state.filters["max_rating"] == 3
+
+
+def test_explicit_filters_override_query_inference() -> None:
+    resolved = resolve_agent_filters(
+        "Compare complaints from Korean and Hong Kong visitors",
+        "market_comparison",
+        {"regions": ["CN"], "max_rating": 2},
+    )
+    assert resolved["regions"] == ["CN"]
+    assert resolved["max_rating"] == 2
+
+
+def test_agent_skips_gemini_when_no_evidence_matches() -> None:
+    class EmptyTools(FakeTools):
+        def search_reviews(self, query, filters, limit):
+            return [], {"retrieval_mode": "dense"}
+
+        def search_reviews_by_market(self, query, filters, limit):
+            return self.search_reviews(query, filters, limit)
+
+    class GeminiMustNotRun:
+        def generate_agent_answer(self, **kwargs):
+            raise AssertionError("Gemini should not run without evidence")
+
+    agent = ReviewAgent.__new__(ReviewAgent)
+    agent.tools = EmptyTools()
+    agent.gemini_service = GeminiMustNotRun()
+    state = agent.run(
+        "What do visitors say about queues?",
+        {"regions": [], "max_rating": None},
+    )
+    assert state.analytics["generation"]["status"] == "skipped_no_evidence"
+    assert "not enough evidence" in state.answer

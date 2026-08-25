@@ -123,6 +123,18 @@ docker compose up --build
 
 The API owns the embedded Qdrant directory; the UI reaches it through the internal Compose network. The first start can take several minutes while embedding and reranker models are downloaded into the shared model cache.
 
+### Controlled interview demo
+
+The optional `interview` Compose profile adds a temporary Cloudflare Quick Tunnel while keeping the API bound to localhost. Set a strong `ALADDIN_DEMO_PASSWORD`, a separate `ALADDIN_API_TOKEN`, and the request/generation limits in `.env`, then run:
+
+```bash
+make demo-up
+# after the interview
+make demo-down
+```
+
+The temporary `trycloudflare.com` URL appears in the tunnel logs and stops working when the profile is shut down. This is controlled external access to a locally running application, not a permanent cloud deployment. See [docs/interview-demo.md](docs/interview-demo.md) for the safety checklist and external-network test.
+
 ## API
 
 `GET /api/v1/metadata` returns data-driven filter options and counts.
@@ -209,6 +221,20 @@ make regression
 ```
 
 Full runs call the configured Gemini model and may incur cost. Reports are written to `evals/results/latest.json` and are intentionally excluded from Git.
+
+The separate Agent suite contains **40 English, Japanese, and Chinese questions** covering task routing, market inference, complaint/low-rating intent, explicit-filter precedence, bounded tool plans, deterministic statistics, citation containment, no-evidence behavior, and provider-failure contracts. Structural evaluation is free and does not call Gemini:
+
+```bash
+make agent-eval
+```
+
+Run the same assertions end to end against the local Agent API only when desired:
+
+```bash
+make agent-eval-live
+```
+
+The live run can call Gemini and is protected by the configured daily generation limit. Provider-failure behavior is tested with deterministic fakes in the unit suite rather than deliberately causing an external outage.
 
 Generate a pooled relevance-labeling file and compare all retrieval modes:
 
