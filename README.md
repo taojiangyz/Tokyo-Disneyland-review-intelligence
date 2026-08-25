@@ -228,10 +228,24 @@ The separate Agent suite contains **40 English, Japanese, and Chinese questions*
 make agent-eval
 ```
 
+When the application is already running through Docker Compose, run the same
+structural suite inside the API container with:
+
+```bash
+docker compose exec api python -m scripts.run_agent_evaluation
+```
+
 Run the same assertions end to end against the local Agent API only when desired:
 
 ```bash
 make agent-eval-live
+```
+
+Docker Compose equivalent:
+
+```bash
+docker compose exec api python -m scripts.run_agent_evaluation \
+  --live --base-url http://127.0.0.1:8000
 ```
 
 The live run can call Gemini and is protected by the configured daily generation limit. Provider-failure behavior is tested with deterministic fakes in the unit suite rather than deliberately causing an external outage.

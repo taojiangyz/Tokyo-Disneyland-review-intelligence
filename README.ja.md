@@ -187,10 +187,23 @@ make regression
 make agent-eval
 ```
 
+Docker Compose で Application が起動済みの場合は、API Container 内で同じ構造評価を実行できます。
+
+```bash
+docker compose exec api python -m scripts.run_agent_evaluation
+```
+
 必要な場合のみ、ローカル Agent API に対して End-to-End 評価を実行します。
 
 ```bash
 make agent-eval-live
+```
+
+Docker Compose での同等コマンド：
+
+```bash
+docker compose exec api python -m scripts.run_agent_evaluation \
+  --live --base-url http://127.0.0.1:8000
 ```
 
 Live 評価は Gemini を呼ぶ可能性があり、設定した1日あたりの Generation 上限で保護されます。Provider 障害は実際の障害を起こさず、Unit Test の決定論的 Fake で検証します。

@@ -18,10 +18,10 @@ regression:
 	$(PYTHON) scripts/run_regression.py
 
 agent-eval:
-	$(PYTHON) scripts/run_agent_evaluation.py
+	$(PYTHON) -m scripts.run_agent_evaluation
 
 agent-eval-live:
-	$(PYTHON) scripts/run_agent_evaluation.py --live
+	$(PYTHON) -m scripts.run_agent_evaluation --live
 
 annotation-pool:
 	$(PYTHON) scripts/export_annotation_pool.py
