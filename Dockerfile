@@ -11,7 +11,12 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --upgrade pip && pip install -r requirements.txt
+# FlagEmbedding depends on PyTorch. Install the CPU wheel explicitly before the
+# remaining dependencies so a CPU-only demo image does not pull multi-gigabyte
+# NVIDIA/CUDA runtime layers that cannot be used on Docker Desktop for Mac.
+RUN pip install --upgrade pip \
+    && pip install --index-url https://download.pytorch.org/whl/cpu torch \
+    && pip install -r requirements.txt
 
 COPY . .
 
