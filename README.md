@@ -250,6 +250,15 @@ docker compose exec api python -m scripts.run_agent_evaluation \
 
 The live run can call Gemini and is protected by the configured daily generation limit. Provider-failure behavior is tested with deterministic fakes in the unit suite rather than deliberately causing an external outage.
 
+Validated on 2026-08-25:
+
+| Agent evaluation | Result | Scope |
+|---|---:|---|
+| Structural suite | **40/40 passed** | Routing, inferred markets, filter precedence, and tool plans; no Gemini calls |
+| Live Docker smoke test | **5/5 passed** | End-to-end API, retrieval, deterministic analytics, Gemini generation, and citation containment |
+
+The five-case live run is deliberately reported as a smoke test, not as a claim that all 40 cases were executed end to end. This keeps provider cost and demo-rate limits controlled while preserving a reproducible full-suite command.
+
 Generate a pooled relevance-labeling file and compare all retrieval modes:
 
 ```bash

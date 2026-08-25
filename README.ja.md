@@ -208,6 +208,15 @@ docker compose exec api python -m scripts.run_agent_evaluation \
 
 Live 評価は Gemini を呼ぶ可能性があり、設定した1日あたりの Generation 上限で保護されます。Provider 障害は実際の障害を起こさず、Unit Test の決定論的 Fake で検証します。
 
+2026-08-25 検証結果：
+
+| Agent 評価 | 結果 | 検証範囲 |
+|---|---:|---|
+| 構造評価 Suite | **40/40 合格** | Routing、市場推論、明示 Filter 優先、Tool Plan。Gemini 呼び出しなし |
+| Docker Live Smoke Test | **5/5 合格** | End-to-End API、検索、決定論的分析、Gemini 生成、Citation 範囲 |
+
+5 件の Live 実行は Smoke Test として明記しており、40 件すべてを End-to-End で実行したとは主張しません。これにより Provider Cost と Demo Rate Limit を抑えながら、完全な Suite の再現コマンドを維持しています。
+
 ## 人手評価済み検索結果
 
 15 問、241 件の Query / Review ペアに対して、0（無関係）、1（部分的に関連）、2（直接関連）の人手ラベルを作成しました。
