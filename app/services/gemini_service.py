@@ -79,6 +79,8 @@ Rules:
 1. Never invent counts, percentages, averages, dates, or market differences.
 2. Quantitative claims must come directly from the analytics JSON.
 3. Qualitative claims must cite at least one review ID in [review_id] format.
+   Put each review ID in its own brackets; do not combine multiple IDs inside
+   one bracket and do not add labels such as "Review:" inside the brackets.
 4. Clearly distinguish customer evidence from your proposed management action.
 5. Do not generalize a small evidence sample to all visitors.
 6. If evidence is insufficient, state that limitation instead of guessing.

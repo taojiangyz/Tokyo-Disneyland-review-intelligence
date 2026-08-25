@@ -3,10 +3,11 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
-import re
 from typing import Any
 
 import requests
+
+from app.citations import inspect_evidence_citations
 from dotenv import load_dotenv
 
 DEFAULT_CASES = Path("evals/regression_cases.jsonl")
@@ -60,11 +61,16 @@ def evaluate_response(case: dict[str, Any], response: dict[str, Any]) -> list[st
 
     if generation.get("status") == "completed" and evidence:
         evidence_ids = {item["review_id"] for item in evidence}
-        cited_ids = set(re.findall(r"\[([^\]]+)\]", response.get("answer", "")))
+        cited_ids, unknown_ids = inspect_evidence_citations(
+            response.get("answer", ""), evidence_ids
+        )
         if not cited_ids:
             failures.append("answer contains no review citations")
-        if cited_ids - evidence_ids:
-            failures.append("answer cites review IDs outside retrieved evidence")
+        if unknown_ids:
+            failures.append(
+                "answer cites review IDs outside retrieved evidence: "
+                + ", ".join(sorted(unknown_ids))
+            )
     return sorted(set(failures))
 
 

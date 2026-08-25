@@ -5,12 +5,12 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
-import re
 from typing import Any
 
 import requests
 from dotenv import load_dotenv
 
+from app.citations import inspect_evidence_citations
 from app.agent.executor import resolve_agent_filters
 from app.agent.planner import build_plan
 from app.agent.router import route_task
@@ -105,11 +105,16 @@ def live_failures(case: dict[str, Any], response: dict[str, Any]) -> list[str]:
 
     if status == "completed" and evidence:
         evidence_ids = {item.get("review_id") for item in evidence}
-        cited_ids = set(re.findall(r"\[([^\]]+)\]", response.get("answer", "")))
+        cited_ids, unknown_ids = inspect_evidence_citations(
+            response.get("answer", ""), evidence_ids
+        )
         if not cited_ids:
             failures.append("answer contains no evidence citations")
-        elif not cited_ids.issubset(evidence_ids):
-            failures.append("answer cites IDs outside returned evidence")
+        if unknown_ids:
+            failures.append(
+                "answer cites IDs outside returned evidence: "
+                + ", ".join(sorted(unknown_ids))
+            )
     return sorted(set(failures))
 
 
