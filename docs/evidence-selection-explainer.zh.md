@@ -213,7 +213,251 @@ Trip.com/Ctrip.com数据中的整体评分较高。韩国和香港的874条评�
 
 ---
 
-## 三、面试时的简短回答
+## 三、Qdrant在这里有什么作用？
+
+Qdrant是本项目的“评论向量数据库和检索引擎”。它主要解决的问题是：
+
+> 用户提出自由问题后，如何从2,049条评论中快速找到语义最相关的几条？
+
+整体位置如下：
+
+```text
+评论原文
+→ BGE-M3生成评论向量
+→ Qdrant保存向量和评论元数据
+
+用户问题
+→ BGE-M3生成问题向量
+→ Qdrant执行条件筛选和向量相似度搜索
+→ 返回5～10条高相关评论
+→ Gemini根据证据生成回答
+```
+
+### 1. Qdrant保存什么？
+
+每条评论在Qdrant中大致包含：
+
+```text
+review_id：评论唯一ID
+region：CN／HK／KR
+rating：1～5星
+review_date：评论日期
+text：评论原文
+dense_vector：BGE-M3生成的语义向量
+sparse_vector：用于实验性Sparse／Hybrid检索的词项向量
+```
+
+其中，向量是一组数字，用来表示评论的语义。
+
+### 2. Qdrant先执行元数据筛选
+
+对于“比较韩国和香港游客的主要不满”，Qdrant先应用：
+
+```text
+region in [KR, HK]
+rating <= 3
+date在用户指定范围内
+```
+
+不符合市场、评分或日期条件的评论不会进入语义排序。
+
+这保证筛选是在检索阶段完成，而不是Gemini生成回答后再过滤。
+
+### 3. Qdrant执行向量相似度搜索
+
+BGE-M3把用户问题转换成问题向量，Qdrant将它与候选评论向量进行比较，返回语义最接近的评论。
+
+它不是只寻找相同关键词。例如：
+
+```text
+问题：游客对排队有什么不满？
+评论：等了两个小时，队伍几乎没有移动。
+```
+
+即使评论中没有“不满”或“排队”这些完全相同的词，向量检索仍可能识别它们语义相关。
+
+BGE-M3支持多语言，因此日语问题也可以检索中文、韩文或英文评论。
+
+### 4. 市场比较时Qdrant分别搜索
+
+在市场比较任务中，系统分别调用Qdrant：
+
+```text
+香港筛选条件 → Qdrant检索香港高相关评论
+韩国筛选条件 → Qdrant检索韩国高相关评论
+→ 两个市场结果交替排列
+```
+
+这样可以防止一个市场占据全部证据名额。
+
+### 5. Qdrant不负责什么？
+
+Qdrant不负责：
+
+- 判断Agent任务类型；
+- 决定投诉问题默认使用1～3星；
+- 给评论生成Topic标签；
+- 翻译评论；
+- 生成管理建议；
+- 撰写最终自然语言回答。
+
+各组件职责如下：
+
+| 组件 | 主要职责 |
+|---|---|
+| Agent Router | 判断任务类型并推断默认筛选条件 |
+| BGE-M3 | 把问题和评论转换成向量 |
+| Qdrant | 保存向量、执行元数据过滤和语义检索 |
+| Python统计工具 | 遍历完整匹配集合并计算数量、均值和分布 |
+| TopicService | 基于预计算标签统计Topic和Sentiment |
+| Gemini | 根据统计与证据生成总结和候选建议 |
+| Streamlit | 展示问题、工具轨迹、统计、回答和原文证据 |
+
+Qdrant也不直接“计算出40条”这个最终统计结论。代码通过Qdrant的过滤与`scroll`接口读取全部匹配记录，再由Python确定性计算数量、平均评分和市场分布。
+
+一句话理解：
+
+> BGE-M3负责把文字变成可以比较的数字，Qdrant负责保存这些数字、应用筛选条件，并找出最接近用户问题的评论。
+
+---
+
+## 四、“経営・管理上の対応策（提案）”是如何生成的？
+
+“経営・管理上の対応策（提案）”不是从评论中直接复制的一段原文，而是Gemini基于统计和评论证据生成的候选管理建议。
+
+生成过程是：
+
+```text
+确定性统计
++ Topic分析
++ 检索出的评论证据
++ 用户提出的业务问题
+→ 受约束的Gemini推理
+→ 候选管理行动
+```
+
+### 1. 程序先提供事实
+
+在调用Gemini之前，程序已经计算：
+
+- 完整匹配评论数量；
+- 各市场评论数量；
+- 平均评分及市场平均评分；
+- 评分分布；
+- Topic出现次数和占比；
+- 不同市场的Topic差异。
+
+这些数值来自程序计算，Gemini不能自行估算或修改。
+
+### 2. 检索系统提供具体客户案例
+
+Qdrant和BGE-M3提供少量高相关评论，包括：
+
+- 评论ID；
+- 市场；
+- 星级；
+- 日期；
+- 评论原文。
+
+这些评论用于说明游客具体遇到了什么问题，并为定性结论提供可展开、可检查的证据。
+
+### 3. Gemini将问题转化为候选行动
+
+Gemini可能进行如下推理：
+
+```text
+统计与证据：
+waiting_time Topic占比较高，多条评论提到等待时间过长。
+
+受约束推理：
+等待体验是值得管理层优先调查的问题。
+
+候选建议：
+改善等待时间信息展示、客流引导或排队沟通。
+```
+
+另一个例子：
+
+```text
+统计与证据：
+某市场较多提到员工沟通、语言说明或设施便利性。
+
+受约束推理：
+该市场可能存在服务沟通或信息可达性问题。
+
+候选建议：
+检查多语言指引、员工沟通培训和便利设施说明。
+```
+
+### 4. 客户证据、分析结论和管理建议必须分开
+
+```text
+客户证据：
+“等待时间太长。”
+
+分析结论：
+等待时间是当前低评分评论中反复出现的问题之一。
+
+管理建议：
+管理层可以评估实时等待信息和客流分流措施。
+```
+
+第一项是客户原话；第二项是基于统计与证据的总结；第三项是AI提出的候选行动。
+
+因此页面使用“提案”一词，而不是声称这些措施是客户直接要求或已经验证有效的方案。
+
+### 5. Gemini受到哪些约束？
+
+当前Prompt要求Gemini：
+
+- 只能使用传入的确定性统计和评论证据；
+- 不得编造数量、百分比、平均值、日期或市场差异；
+- 定性结论必须引用真实`review_id`；
+- 必须区分客户证据与管理建议；
+- 不能把少量证据推广为全部游客的结论；
+- 证据不足时必须说明限制；
+- 回答最后必须说明证据范围。
+
+系统还会检查回答引用的评论ID是否属于返回的证据集合。
+
+### 6. 管理建议的可信度边界
+
+这个Agent没有获得以下企业内部信息：
+
+- 改善措施成本；
+- 员工及设备容量；
+- 实时客流；
+- 改造周期；
+- 法务与安全约束；
+- 投资回报率；
+- 措施实施后的因果效果。
+
+因此它能提供的是：
+
+> 根据当前评论数据，管理层值得进一步调查的问题，以及可能采取的行动方向。
+
+它不能直接证明：
+
+> 某项措施一定有效，或应该立即投资实施。
+
+正确的决策流程应当是：
+
+```text
+评论证据和统计
+→ AI生成候选行动
+→ 管理人员审核
+→ 结合成本、可行性和内部运营数据
+→ 决定是否试点和实施
+→ 使用新数据评估效果
+```
+
+一句话理解：
+
+> “経営・管理上の対応策（提案）”是有证据约束的AI建议层，不是客户原话、事实统计或已经验证有效的经营决策。
+
+---
+
+## 五、面试时的简短回答
 
 可以这样向面试官解释：
 
@@ -222,3 +466,19 @@ Trip.com/Ctrip.com数据中的整体评分较高。韩国和香港的874条评�
 英文表达：
 
 > The project contains 2,049 reviews in total. This question targets Korean and Hong Kong visitors and is classified as complaint analysis, so the Agent defaults to one-to-three-star reviews. That leaves 40 complete matching records: 23 from Hong Kong and 17 from Korea. Deterministic code calculates statistics and topic distributions over all 40 records, while BGE-M3 Dense Retrieval selects 10 balanced, high-relevance reviews as qualitative evidence. Gemini receives only those aggregates and evidence; it does not estimate the counts or reread all 2,049 reviews for every question.
+
+Qdrant的面试表达：
+
+> Qdrant是项目的向量数据库和检索层。它保存BGE-M3评论向量及市场、评分、日期等元数据，先执行筛选，再返回与问题语义最相关的评论作为Gemini的证据。
+
+英文表达：
+
+> Qdrant is the vector database and retrieval layer. It stores BGE-M3 review embeddings together with market, rating, and date metadata, applies filters before retrieval, and returns the semantically most relevant reviews as grounded evidence for Gemini.
+
+管理建议的面试表达：
+
+> 管理建议不是客户原话，也不是已验证的经营决策。Gemini只能根据程序计算的统计、Topic分布和检索证据提出候选行动，并且必须把客户事实与AI建议分开。最终仍需要管理人员结合成本、可行性和内部运营数据进行审核。
+
+英文表达：
+
+> The management actions are neither direct customer statements nor validated business decisions. Gemini proposes candidate actions only from deterministic statistics, topic distributions, and retrieved evidence, while explicitly separating customer facts from AI recommendations. A manager must still review feasibility, cost, and internal operational data before implementation.
