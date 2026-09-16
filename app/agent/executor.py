@@ -1,11 +1,38 @@
 import json
+import logging
+import os
 from time import perf_counter
 from typing import Any
 
 from app.agent.planner import build_plan
 from app.agent.router import has_root_cause_intent, infer_markets, route_task
 from app.agent.state import AgentState
+from app.agent.tool_contracts import plan_to_steps
 from app.agent.tools import ReviewTools, verify_evidence
+
+
+logger = logging.getLogger(__name__)
+
+
+def resolve_agent_filters(
+    query: str,
+    task: str,
+    filters: dict[str, Any],
+) -> dict[str, Any]:
+    """Apply deterministic query-derived filters without overriding UI choices."""
+    resolved = dict(filters)
+    if not resolved.get("regions"):
+        inferred_markets = infer_markets(query)
+        if inferred_markets:
+            resolved["regions"] = inferred_markets
+
+    needs_low_ratings = task in {
+        "root_cause_analysis",
+        "improvement_planning",
+    } or (task == "market_comparison" and has_root_cause_intent(query))
+    if needs_low_ratings and resolved.get("max_rating") is None:
+        resolved["max_rating"] = 3
+    return resolved
 
 
 class ReviewAgent:
@@ -20,24 +47,37 @@ class ReviewAgent:
         evidence_limit: int = 5,
     ) -> AgentState:
         task = route_task(query)
+        plan = build_plan(task)
+        planning = {
+            "source": "deterministic_router",
+            "fallback_used": False,
+        }
+        if os.getenv("ALADDIN_LLM_PLANNER_ENABLED", "").casefold() in {
+            "1",
+            "true",
+            "yes",
+        }:
+            try:
+                model_plan = self.gemini_service.plan_agent_tools(query, filters)
+                task = model_plan.task
+                plan = plan_to_steps(model_plan)
+                planning = {
+                    "source": "gemini_function_call",
+                    "fallback_used": False,
+                }
+            except Exception as exc:
+                planning = {
+                    "source": "deterministic_router",
+                    "fallback_used": True,
+                    "failure_type": type(exc).__name__,
+                }
         state = AgentState(
             query=query,
             task=task,
-            filters=dict(filters),
-            plan=build_plan(task),
+            filters=resolve_agent_filters(query, task, filters),
+            plan=plan,
         )
-
-        if not state.filters.get("regions"):
-            inferred_markets = infer_markets(query)
-            if inferred_markets:
-                state.filters["regions"] = inferred_markets
-
-        if task in {"root_cause_analysis", "improvement_planning"}:
-            if state.filters.get("max_rating") is None:
-                state.filters["max_rating"] = 3
-        elif task == "market_comparison" and has_root_cause_intent(query):
-            if state.filters.get("max_rating") is None:
-                state.filters["max_rating"] = 3
+        state.analytics["planning"] = planning
 
         for step in state.plan:
             started = perf_counter()
@@ -86,19 +126,39 @@ class ReviewAgent:
                         else "Evidence insufficient"
                     )
                 elif step.tool == "grounded_generation":
-                    state.answer = self._generate_answer(state)
-                    step.summary = "Generated answer from tool outputs"
+                    verification = state.analytics.get("verification", {})
+                    if not state.evidence and not verification.get("passed"):
+                        state.answer = (
+                            "No reviews matched the selected filters, so there is "
+                            "not enough evidence to answer this question."
+                        )
+                        state.analytics["generation"] = {
+                            "status": "skipped_no_evidence"
+                        }
+                        step.summary = "Skipped generation because no evidence matched"
+                    else:
+                        state.answer = self._generate_answer(state)
+                        state.analytics["generation"] = {"status": "completed"}
+                        step.summary = "Generated answer from tool outputs"
                 step.status = "completed"
             except Exception as exc:
                 step.status = "failed"
                 step.summary = str(exc)
                 if step.tool == "grounded_generation":
+                    logger.exception(
+                        "Agent answer generation failed",
+                        extra={
+                            "task": state.task,
+                            "provider_error": type(exc).__name__,
+                        },
+                    )
                     state.answer = (
                         "Answer generation is temporarily unavailable. "
                         "The deterministic analytics and retrieved evidence "
                         "remain available."
                     )
                     state.analytics["generation_error"] = type(exc).__name__
+                    state.analytics["generation"] = {"status": "degraded"}
                 else:
                     raise
             finally:

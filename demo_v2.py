@@ -1,4 +1,5 @@
 import base64
+import hmac
 import html
 import json
 import os
@@ -10,10 +11,13 @@ from dotenv import load_dotenv
 from google import genai
 
 
+load_dotenv()
 API_BASE_URL = os.getenv("ALADDIN_API_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 API_URL = f"{API_BASE_URL}/api/v1/analyze"
 AGENT_API_URL = f"{API_BASE_URL}/api/v1/agent/analyze"
 METADATA_URL = f"{API_BASE_URL}/api/v1/metadata"
+API_TOKEN = os.getenv("ALADDIN_API_TOKEN", "").strip()
+API_HEADERS = {"X-Aladdin-Token": API_TOKEN} if API_TOKEN else {}
 HERO_IMAGE = Path("assets/tokyo_disney_ai_hero.png")
 
 COPY = {
@@ -176,7 +180,7 @@ def format_stars(rating: object) -> str:
 
 @st.cache_data(ttl=300, show_spinner=False)
 def load_metadata() -> dict:
-    response = requests.get(METADATA_URL, timeout=10)
+    response = requests.get(METADATA_URL, headers=API_HEADERS, timeout=10)
     response.raise_for_status()
     return response.json()
 
@@ -286,6 +290,26 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
+
+
+def require_demo_password() -> None:
+    expected = os.getenv("ALADDIN_DEMO_PASSWORD", "").strip()
+    if not expected or st.session_state.get("demo_authenticated"):
+        return
+
+    st.title("Tokyo Disney Review Intelligence")
+    st.caption("Controlled interview demonstration / 面接用デモ")
+    supplied = st.text_input("Demo password", type="password")
+    if st.button("Open demo", type="primary"):
+        if hmac.compare_digest(supplied, expected):
+            st.session_state.demo_authenticated = True
+            st.rerun()
+        else:
+            st.error("Incorrect password.")
+    st.stop()
+
+
+require_demo_password()
 
 
 # -----------------------------
@@ -705,6 +729,7 @@ if analyze_clicked:
             response = requests.post(
                 request_url,
                 json=payload,
+                headers=API_HEADERS,
                 timeout=180,
             )
 

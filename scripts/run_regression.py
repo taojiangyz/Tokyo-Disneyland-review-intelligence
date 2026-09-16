@@ -1,11 +1,14 @@
 import argparse
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
-import re
 from typing import Any
 
 import requests
+
+from app.citations import inspect_evidence_citations
+from dotenv import load_dotenv
 
 DEFAULT_CASES = Path("evals/regression_cases.jsonl")
 DEFAULT_OUTPUT = Path("evals/results/latest.json")
@@ -58,11 +61,16 @@ def evaluate_response(case: dict[str, Any], response: dict[str, Any]) -> list[st
 
     if generation.get("status") == "completed" and evidence:
         evidence_ids = {item["review_id"] for item in evidence}
-        cited_ids = set(re.findall(r"\[([^\]]+)\]", response.get("answer", "")))
+        cited_ids, unknown_ids = inspect_evidence_citations(
+            response.get("answer", ""), evidence_ids
+        )
         if not cited_ids:
             failures.append("answer contains no review citations")
-        if cited_ids - evidence_ids:
-            failures.append("answer cites review IDs outside retrieved evidence")
+        if unknown_ids:
+            failures.append(
+                "answer cites review IDs outside retrieved evidence: "
+                + ", ".join(sorted(unknown_ids))
+            )
     return sorted(set(failures))
 
 
@@ -77,6 +85,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    load_dotenv()
     args = parse_args()
     cases = load_cases(args.cases)
     if args.case_id:
@@ -87,6 +96,10 @@ def main() -> None:
         raise SystemExit("No matching regression cases")
 
     results = []
+    headers = {}
+    api_token = os.getenv("ALADDIN_API_TOKEN", "").strip()
+    if api_token:
+        headers["X-Aladdin-Token"] = api_token
     for index, case in enumerate(cases, start=1):
         payload = {"query": case["question"], **case["payload"]}
         print(f"[{index}/{len(cases)}] {case['id']}", flush=True)
@@ -94,6 +107,7 @@ def main() -> None:
             api_response = requests.post(
                 f"{args.base_url}/api/v1/analyze",
                 json=payload,
+                headers=headers,
                 timeout=180,
             )
             api_response.raise_for_status()

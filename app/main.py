@@ -1,9 +1,13 @@
 from contextlib import asynccontextmanager
+import hmac
 import logging
+import os
 from time import perf_counter
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from dotenv import load_dotenv
 
 from app.schemas import (
     AgentAnalyzeRequest,
@@ -16,24 +20,39 @@ from app.schemas import (
     RetrieveResponse,
 )
 from app.agent import ReviewAgent
-from app.services.gemini_service import GeminiService
+from app.services.llm_service import ReviewLLMService, build_llm_service
 from app.services.rag_service import RagService
 from app.services.topic_service import TopicService
 from app.logging_config import configure_logging
+from app.security import DemoUsageGuard
 
 
+load_dotenv()
 configure_logging()
 logger = logging.getLogger(__name__)
 
 
+def _int_setting(name: str, default: int = 0) -> int:
+    try:
+        return max(0, int(os.getenv(name, str(default))))
+    except ValueError:
+        logger.warning("Invalid integer setting %s; using %s", name, default)
+        return default
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    app.state.demo_usage_guard = DemoUsageGuard(
+        requests_per_minute=_int_setting("ALADDIN_RATE_LIMIT_PER_MINUTE", 0),
+        generations_per_day=_int_setting("ALADDIN_MAX_GENERATIONS_PER_DAY", 0),
+    )
     app.state.rag_service = RagService()
-    app.state.gemini_service = GeminiService()
+    app.state.llm_service = build_llm_service()
+    app.state.gemini_service = app.state.llm_service
     app.state.topic_service = TopicService()
     app.state.review_agent = ReviewAgent(
         app.state.rag_service,
-        app.state.gemini_service,
+        app.state.llm_service,
         app.state.topic_service,
     )
 
@@ -57,6 +76,44 @@ async def log_request(request: Request, call_next):
     started = perf_counter()
     status_code = 500
     try:
+        if request.url.path.startswith("/api/v1/"):
+            expected_token = os.getenv("ALADDIN_API_TOKEN", "").strip()
+            supplied_token = request.headers.get("X-Aladdin-Token", "")
+            if expected_token and not hmac.compare_digest(
+                supplied_token,
+                expected_token,
+            ):
+                status_code = 401
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Invalid or missing API token"},
+                )
+
+            client_key = request.client.host if request.client else "unknown"
+            decision = request.app.state.demo_usage_guard.check_request(client_key)
+            if not decision.allowed:
+                status_code = 429
+                return JSONResponse(
+                    status_code=429,
+                    headers={"Retry-After": str(decision.retry_after_seconds)},
+                    content={"detail": "Demo request rate limit exceeded"},
+                )
+
+        if (
+            request.method == "POST"
+            and request.url.path in {
+                "/api/v1/analyze",
+                "/api/v1/agent/analyze",
+            }
+        ):
+            decision = request.app.state.demo_usage_guard.reserve_generation()
+            if not decision.allowed:
+                status_code = 429
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": "Daily Gemini generation limit reached"},
+                )
+
         response = await call_next(request)
         status_code = response.status_code
         response.headers["X-Request-ID"] = request_id
@@ -202,9 +259,10 @@ def analyze_reviews(
 
     evidence_text = "\n\n".join(evidence_blocks)
 
-    gemini_service: GeminiService = (
-        request.app.state.gemini_service
+    llm_service: ReviewLLMService = (
+        request.app.state.llm_service
     )
+    llm_service.reset_tracking()
 
     generation_start = perf_counter()
 
@@ -218,7 +276,7 @@ def analyze_reviews(
         generation_status = "skipped_no_evidence"
     else:
         try:
-            answer = gemini_service.generate_answer(
+            answer = llm_service.generate_answer(
                 query=request_body.query,
                 evidence_text=evidence_text,
             )
@@ -294,10 +352,12 @@ def analyze_reviews(
             "ranking_changes": [],
         },
         "generation": {
-            "provider": "Gemini",
-            "model": gemini_service.last_model_name,
+            "provider": llm_service.provider_name,
+            "model": llm_service.last_model_name,
             "evidence_count": len(evidence),
-            "prompt_version": "v1",
+            "prompt_id": llm_service.last_prompt_id,
+            "prompt_version": llm_service.last_prompt_version,
+            "usage": llm_service.last_usage,
             "status": generation_status,
         },
         "timing_ms": {
@@ -328,6 +388,7 @@ def agent_analyze_reviews(
     request: Request,
 ) -> AgentAnalyzeResponse:
     request_start = perf_counter()
+    request.app.state.llm_service.reset_tracking()
     date_from = (
         request_body.date_from.isoformat()
         if request_body.date_from
@@ -373,7 +434,13 @@ def agent_analyze_reviews(
         trace={
             "agent_version": "mvp-v1",
             "tool_count": len(state.plan),
-            "model": request.app.state.gemini_service.last_model_name,
+            "provider": request.app.state.llm_service.provider_name,
+            "model": request.app.state.llm_service.last_model_name,
+            "prompt_id": request.app.state.llm_service.last_prompt_id,
+            "prompt_version": (
+                request.app.state.llm_service.last_prompt_version
+            ),
+            "usage": request.app.state.llm_service.last_usage,
             "total_ms": round(
                 (perf_counter() - request_start) * 1000,
                 2,

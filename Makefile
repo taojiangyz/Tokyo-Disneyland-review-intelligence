@@ -1,6 +1,6 @@
 PYTHON ?= .venv/bin/python
 
-.PHONY: validate-data prepare-data rebuild-index test regression annotation-pool evaluate-retrieval translations topic-labels topic-audit-sample evaluate-topic-labels run-api run-ui run-annotation run-topic-audit docker-up docker-down
+.PHONY: validate-data prepare-data rebuild-index test regression agent-eval agent-eval-live annotation-pool evaluate-retrieval translations topic-labels topic-audit-sample evaluate-topic-labels run-api run-ui run-annotation run-topic-audit docker-up docker-down demo-up demo-down
 
 validate-data:
 	$(PYTHON) src/prepare_data.py --validate-only
@@ -16,6 +16,12 @@ test:
 
 regression:
 	$(PYTHON) scripts/run_regression.py
+
+agent-eval:
+	$(PYTHON) -m scripts.run_agent_evaluation
+
+agent-eval-live:
+	$(PYTHON) -m scripts.run_agent_evaluation --live
 
 annotation-pool:
 	$(PYTHON) scripts/export_annotation_pool.py
@@ -52,3 +58,9 @@ docker-up:
 
 docker-down:
 	docker compose down
+
+demo-up:
+	./scripts/start_interview_demo.sh
+
+demo-down:
+	./scripts/stop_interview_demo.sh

@@ -123,6 +123,18 @@ docker compose up --build
 
 The API owns the embedded Qdrant directory; the UI reaches it through the internal Compose network. The first start can take several minutes while embedding and reranker models are downloaded into the shared model cache.
 
+### Controlled interview demo
+
+The optional `interview` Compose profile adds a temporary Cloudflare Quick Tunnel while keeping the API bound to localhost. Set a strong `ALADDIN_DEMO_PASSWORD`, a separate `ALADDIN_API_TOKEN`, and the request/generation limits in `.env`, then run:
+
+```bash
+make demo-up
+# after the interview
+make demo-down
+```
+
+The temporary `trycloudflare.com` URL appears in the tunnel logs and stops working when the profile is shut down. This is controlled external access to a locally running application, not a permanent cloud deployment. See [docs/interview-demo.md](docs/interview-demo.md) for the safety checklist and external-network test.
+
 ## API
 
 `GET /api/v1/metadata` returns data-driven filter options and counts.
@@ -209,6 +221,96 @@ make regression
 ```
 
 Full runs call the configured Gemini model and may incur cost. Reports are written to `evals/results/latest.json` and are intentionally excluded from Git.
+
+The separate Agent suite contains **40 English, Japanese, and Chinese questions** covering task routing, market inference, complaint/low-rating intent, explicit-filter precedence, bounded tool plans, deterministic statistics, citation containment, no-evidence behavior, and provider-failure contracts. Structural evaluation is free and does not call Gemini:
+
+```bash
+make agent-eval
+```
+
+When the application is already running through Docker Compose, run the same
+structural suite inside the API container with:
+
+```bash
+docker compose exec api python -m scripts.run_agent_evaluation
+```
+
+Run the same assertions end to end against the local Agent API only when desired:
+
+```bash
+make agent-eval-live
+```
+
+For an inexpensive but representative live check, use the curated smoke suite.
+It covers evidence Q&A, root-cause analysis, market comparison, improvement
+planning, and no-evidence abstention instead of simply taking the first five
+cases:
+
+```bash
+python -m scripts.run_agent_evaluation --live --smoke \
+  --output evals/results/agent_gemini_smoke.json
+```
+
+Docker Compose equivalent:
+
+```bash
+docker compose exec api python -m scripts.run_agent_evaluation \
+  --live --base-url http://127.0.0.1:8000
+```
+
+The live run can call Gemini and is protected by the configured daily generation limit. Provider-failure behavior is tested with deterministic fakes in the unit suite rather than deliberately causing an external outage.
+
+Evaluation reports include overall and per-category pass rates. Live reports
+also aggregate prompt/completion/total tokens, mean/P50/P95 end-to-end latency,
+and failed-case attribution across prompt, retrieval, model, data, and
+orchestration layers. This makes regressions diagnosable instead of reducing
+the result to one pass count.
+
+Validated on 2026-09-16:
+
+| Agent evaluation | Result | Scope |
+|---|---:|---|
+| Structural suite | **40/40 passed** | Routing, inferred markets, filter precedence, and tool plans; no Gemini calls |
+| Curated Docker Live smoke test | **5/5 passed** | All four Agent tasks plus no-evidence abstention; retrieval, deterministic analytics, Gemini generation, and citation containment |
+
+The five-case live run is deliberately reported as a smoke test, not as a claim that all 40 cases were executed end to end. This keeps provider cost and demo-rate limits controlled while preserving a reproducible full-suite command.
+
+The latest instrumented Gemini smoke run used prompt `agent_answer` version
+`1.0.0` and `gemini-3.5-flash-lite`. It consumed **8,547 tokens** across five
+requests (one no-evidence case correctly skipped generation), with **3.04 s
+mean**, **3.39 s P50**, and **4.11 s P95** end-to-end latency. Tool timing
+showed that grounded generation averaged **2.61 s** across all five cases
+(about **3.26 s** over the four generated answers), while retrieval averaged
+**0.40 s** and deterministic statistics remained below **0.09 s**. No prompt,
+retrieval, model, data, or orchestration failures were recorded.
+
+### Versioned prompts
+
+Generation prompts live under [`prompts/`](prompts/) and are selected through
+`prompts/registry.json`. Every response trace records the prompt ID and semantic
+version, so prompt changes can be reviewed and compared against the fixed eval
+sets instead of being tuned invisibly inside Python code.
+
+### Bounded native function calling
+
+The default deterministic router remains the low-cost, reproducible path. Set
+`ALADDIN_LLM_PLANNER_ENABLED=true` to let Gemini submit one native
+`submit_agent_plan` function call before execution. The returned plan is parsed
+through strict Pydantic contracts: only six registered tools are allowed,
+arguments reject unknown fields, evidence limits are bounded, the workflow is
+limited to six steps, and retrieval must be followed by evidence verification
+before generation. Invalid calls automatically fall back to the deterministic
+router and expose the fallback reason in `analytics.planning`.
+
+### Provider portability
+
+Set `ALADDIN_LLM_PROVIDER=gemini` for the default provider or
+`ALADDIN_LLM_PROVIDER=openai_compatible` for an Ollama, vLLM, or internal
+OpenAI-compatible endpoint. Retrieval, tool contracts, prompts, and evaluation
+remain unchanged. Response traces include provider, actual model, prompt
+version, and reported token usage. See the
+[model migration guide](docs/model-migration.md) for configuration and parity
+evaluation commands.
 
 Generate a pooled relevance-labeling file and compare all retrieval modes:
 
