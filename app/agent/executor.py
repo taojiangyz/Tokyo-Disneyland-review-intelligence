@@ -1,11 +1,17 @@
 import json
+import logging
+import os
 from time import perf_counter
 from typing import Any
 
 from app.agent.planner import build_plan
 from app.agent.router import has_root_cause_intent, infer_markets, route_task
 from app.agent.state import AgentState
+from app.agent.tool_contracts import plan_to_steps
 from app.agent.tools import ReviewTools, verify_evidence
+
+
+logger = logging.getLogger(__name__)
 
 
 def resolve_agent_filters(
@@ -41,12 +47,37 @@ class ReviewAgent:
         evidence_limit: int = 5,
     ) -> AgentState:
         task = route_task(query)
+        plan = build_plan(task)
+        planning = {
+            "source": "deterministic_router",
+            "fallback_used": False,
+        }
+        if os.getenv("ALADDIN_LLM_PLANNER_ENABLED", "").casefold() in {
+            "1",
+            "true",
+            "yes",
+        }:
+            try:
+                model_plan = self.gemini_service.plan_agent_tools(query, filters)
+                task = model_plan.task
+                plan = plan_to_steps(model_plan)
+                planning = {
+                    "source": "gemini_function_call",
+                    "fallback_used": False,
+                }
+            except Exception as exc:
+                planning = {
+                    "source": "deterministic_router",
+                    "fallback_used": True,
+                    "failure_type": type(exc).__name__,
+                }
         state = AgentState(
             query=query,
             task=task,
             filters=resolve_agent_filters(query, task, filters),
-            plan=build_plan(task),
+            plan=plan,
         )
+        state.analytics["planning"] = planning
 
         for step in state.plan:
             started = perf_counter()
@@ -114,6 +145,13 @@ class ReviewAgent:
                 step.status = "failed"
                 step.summary = str(exc)
                 if step.tool == "grounded_generation":
+                    logger.exception(
+                        "Agent answer generation failed",
+                        extra={
+                            "task": state.task,
+                            "provider_error": type(exc).__name__,
+                        },
+                    )
                     state.answer = (
                         "Answer generation is temporarily unavailable. "
                         "The deterministic analytics and retrieved evidence "

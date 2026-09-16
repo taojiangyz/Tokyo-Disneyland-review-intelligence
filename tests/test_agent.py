@@ -2,6 +2,7 @@ from app.agent.executor import ReviewAgent, resolve_agent_filters
 from app.agent.planner import build_plan
 from app.agent.router import infer_markets, route_task
 from app.agent.tools import verify_evidence
+from app.agent.tool_contracts import AgentPlan
 
 
 class FakeTools:
@@ -171,3 +172,45 @@ def test_agent_skips_gemini_when_no_evidence_matches() -> None:
     )
     assert state.analytics["generation"]["status"] == "skipped_no_evidence"
     assert "not enough evidence" in state.answer
+
+
+def test_agent_uses_validated_function_call_plan_when_enabled(monkeypatch) -> None:
+    class PlanningGemini(FakeGemini):
+        def plan_agent_tools(self, query, filters):
+            return AgentPlan.model_validate(
+                {
+                    "task": "evidence_qa",
+                    "calls": [
+                        {"tool": "search_reviews", "arguments": {}},
+                        {"tool": "evidence_verifier", "arguments": {}},
+                        {"tool": "grounded_generation", "arguments": {}},
+                    ],
+                }
+            )
+
+    monkeypatch.setenv("ALADDIN_LLM_PLANNER_ENABLED", "true")
+    agent = ReviewAgent.__new__(ReviewAgent)
+    agent.tools = FakeTools()
+    agent.gemini_service = PlanningGemini()
+    state = agent.run("What do visitors say about queues?", {"regions": []})
+    assert state.analytics["planning"] == {
+        "source": "gemini_function_call",
+        "fallback_used": False,
+    }
+
+
+def test_agent_falls_back_when_function_call_plan_is_invalid(monkeypatch) -> None:
+    class BrokenPlanningGemini(FakeGemini):
+        def plan_agent_tools(self, query, filters):
+            raise ValueError("invalid tool plan")
+
+    monkeypatch.setenv("ALADDIN_LLM_PLANNER_ENABLED", "true")
+    agent = ReviewAgent.__new__(ReviewAgent)
+    agent.tools = FakeTools()
+    agent.gemini_service = BrokenPlanningGemini()
+    state = agent.run("What do visitors say about queues?", {"regions": []})
+    assert state.analytics["planning"] == {
+        "source": "deterministic_router",
+        "fallback_used": True,
+        "failure_type": "ValueError",
+    }

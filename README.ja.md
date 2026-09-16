@@ -208,14 +208,33 @@ docker compose exec api python -m scripts.run_agent_evaluation \
 
 Live 評価は Gemini を呼ぶ可能性があり、設定した1日あたりの Generation 上限で保護されます。Provider 障害は実際の障害を起こさず、Unit Test の決定論的 Fake で検証します。
 
+生成 Prompt は [`prompts/`](prompts/) に分離され、`registry.json` で有効な
+Prompt ID と Semantic Version を管理します。API Trace に Prompt ID と Version
+を記録するため、Python Code 内で感覚的に変更するのではなく、固定評価 Set と
+比較しながら変更できます。
+
+既定では低コストで再現可能な決定論的 Router を使用します。
+`ALADDIN_LLM_PLANNER_ENABLED=true` にすると、Gemini が Native Function Calling
+で `submit_agent_plan` を1回呼び出します。Plan は Pydantic Contract で検証され、
+登録済み Tool、引数範囲、最大6 Step、検索後の Evidence Verification を強制します。
+不正な Plan は決定論的 Router に Fallback し、理由を `analytics.planning` に残します。
+
 2026-08-25 検証結果：
 
 | Agent 評価 | 結果 | 検証範囲 |
 |---|---:|---|
 | 構造評価 Suite | **40/40 合格** | Routing、市場推論、明示 Filter 優先、Tool Plan。Gemini 呼び出しなし |
-| Docker Live Smoke Test | **5/5 合格** | End-to-End API、検索、決定論的分析、Gemini 生成、Citation 範囲 |
+| 選定 Docker Live Smoke Test | **5/5 合格** | 4種類のAgent TaskとEvidenceなしの棄却、検索、決定論的分析、Gemini生成、Citation範囲 |
 
 5 件の Live 実行は Smoke Test として明記しており、40 件すべてを End-to-End で実行したとは主張しません。これにより Provider Cost と Demo Rate Limit を抑えながら、完全な Suite の再現コマンドを維持しています。
+
+2026-09-16 の最新計測 Smoke Test は `agent_answer` Version `1.0.0` と
+`gemini-3.5-flash-lite` を使用しました。5 Request 合計は **8,547 Token**
+（Evidenceなしの1件は生成を正しくSkip）、End-to-End Latencyは平均 **3.04秒**、
+P50 **3.39秒**、P95 **4.11秒** でした。Grounded Generation は全5件平均
+**2.61秒**（実際に生成した4件では約 **3.26秒**）、Retrieval は平均 **0.40秒**、
+決定論的統計は **0.09秒未満** でした。Prompt、Retrieval、Model、Data、
+Orchestration の失敗はありませんでした。
 
 ## 人手評価済み検索結果
 

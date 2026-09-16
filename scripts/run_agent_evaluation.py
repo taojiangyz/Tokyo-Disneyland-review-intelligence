@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+from statistics import mean, median
 from typing import Any
 
 import requests
@@ -18,6 +19,111 @@ from app.agent.router import route_task
 
 DEFAULT_CASES = Path("evals/agent_cases.jsonl")
 DEFAULT_OUTPUT = Path("evals/results/agent_latest.json")
+SMOKE_CASE_IDS = (
+    "qa_waiting_en",
+    "root_complaints_en",
+    "compare_kr_hk_en",
+    "improve_priority_en",
+    "qa_no_evidence_zh",
+)
+
+
+def percentile(values: list[float], fraction: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = min(len(ordered) - 1, round((len(ordered) - 1) * fraction))
+    return round(ordered[index], 2)
+
+
+def classify_failure(message: str) -> str:
+    normalized = message.casefold()
+    if any(term in normalized for term in ("citation", "cites", "answer contains")):
+        return "prompt"
+    if any(
+        term in normalized
+        for term in ("evidence_count", "evidence violates", "evidence regions")
+    ):
+        return "retrieval"
+    if "statistics calculation" in normalized:
+        return "data"
+    if any(
+        term in normalized
+        for term in ("generation_status", "connection", "timeout", "http")
+    ):
+        return "model"
+    return "orchestration"
+
+
+def build_summary(results: list[dict[str, Any]], live: bool) -> dict[str, Any]:
+    total = len(results)
+    passed = sum(item["passed"] for item in results)
+    categories: dict[str, dict[str, int | float]] = {}
+    for item in results:
+        bucket = categories.setdefault(item["category"], {"passed": 0, "total": 0})
+        bucket["total"] += 1
+        bucket["passed"] += int(item["passed"])
+    for bucket in categories.values():
+        bucket["pass_rate"] = round(bucket["passed"] / bucket["total"], 4)
+
+    failure_categories = {
+        "prompt": 0,
+        "retrieval": 0,
+        "model": 0,
+        "data": 0,
+        "orchestration": 0,
+    }
+    for item in results:
+        item["failure_categories"] = sorted(
+            {classify_failure(message) for message in item["failures"]}
+        )
+        for category in item["failure_categories"]:
+            failure_categories[category] += 1
+
+    summary: dict[str, Any] = {
+        "pass_rate": round(passed / total, 4) if total else 0,
+        "by_case_category": categories,
+        "failed_cases_by_root_cause": failure_categories,
+    }
+    if live:
+        rows = [item.get("live", {}) for item in results]
+        latencies = [
+            float(row["total_ms"])
+            for row in rows
+            if row.get("total_ms") is not None
+        ]
+        usage_keys = ("prompt_tokens", "completion_tokens", "total_tokens")
+        token_usage = {
+            key: sum(int((row.get("usage") or {}).get(key, 0)) for row in rows)
+            for key in usage_keys
+        }
+        summary["latency_ms"] = {
+            "mean": round(mean(latencies), 2) if latencies else None,
+            "p50": round(median(latencies), 2) if latencies else None,
+            "p95": percentile(latencies, 0.95),
+        }
+        summary["token_usage"] = token_usage
+        summary["providers"] = sorted(
+            {row.get("provider") for row in rows if row.get("provider")}
+        )
+        summary["models"] = sorted(
+            {row.get("model") for row in rows if row.get("model")}
+        )
+        per_tool: dict[str, list[float]] = {}
+        for row in rows:
+            for tool, duration in (row.get("step_timings_ms") or {}).items():
+                if duration is not None:
+                    per_tool.setdefault(tool, []).append(float(duration))
+        summary["tool_latency_ms"] = {
+            tool: {
+                "calls": len(values),
+                "mean": round(mean(values), 2),
+                "p50": round(median(values), 2),
+                "p95": percentile(values, 0.95),
+            }
+            for tool, values in sorted(per_tool.items())
+        }
+    return summary
 
 
 def load_cases(path: Path) -> list[dict[str, Any]]:
@@ -96,8 +202,11 @@ def live_failures(case: dict[str, Any], response: dict[str, Any]) -> list[str]:
 
     analytics = response.get("analytics", {})
     status = analytics.get("generation", {}).get("status")
-    if expected.get("generation_status") and status != expected["generation_status"]:
+    expected_status = expected.get("generation_status")
+    if expected_status and status != expected_status:
         failures.append(f"generation_status={status}")
+    elif not expected_status and evidence and status != "completed":
+        failures.append(f"generation_status={status}, expected=completed")
     if expected.get("requires_deterministic_statistics"):
         calculation = analytics.get("statistics", {}).get("calculation")
         if calculation != "deterministic":
@@ -126,6 +235,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--live", action="store_true", help="Call the live Agent API")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--case-id")
+    parser.add_argument(
+        "--smoke",
+        action="store_true",
+        help="Run five representative cases across all Agent task types",
+    )
     return parser.parse_args()
 
 
@@ -135,6 +249,9 @@ def main() -> None:
     cases = load_cases(args.cases)
     if args.case_id:
         cases = [case for case in cases if case["id"] == args.case_id]
+    if args.smoke:
+        by_id = {case["id"]: case for case in cases}
+        cases = [by_id[case_id] for case_id in SMOKE_CASE_IDS]
     if args.limit:
         cases = cases[: args.limit]
     if not cases:
@@ -168,19 +285,36 @@ def main() -> None:
                     "generation_status": response.get("analytics", {})
                     .get("generation", {})
                     .get("status"),
+                    "generation_error": response.get("analytics", {}).get(
+                        "generation_error"
+                    ),
+                    "provider": response.get("trace", {}).get("provider"),
+                    "model": response.get("trace", {}).get("model"),
+                    "prompt_id": response.get("trace", {}).get("prompt_id"),
+                    "prompt_version": response.get("trace", {}).get(
+                        "prompt_version"
+                    ),
+                    "usage": response.get("trace", {}).get("usage", {}),
                     "total_ms": response.get("trace", {}).get("total_ms"),
+                    "step_timings_ms": {
+                        step.get("tool"): step.get("duration_ms")
+                        for step in response.get("steps", [])
+                        if step.get("tool")
+                    },
                 }
             except requests.RequestException as exc:
                 result["passed"] = False
                 result["failures"].append(str(exc))
         results.append(result)
 
+    summary = build_summary(results, live=args.live)
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "mode": "live" if args.live else "structural",
         "total": len(results),
         "passed": sum(item["passed"] for item in results),
         "failed": sum(not item["passed"] for item in results),
+        "summary": summary,
         "results": results,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)

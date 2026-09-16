@@ -1,0 +1,12 @@
+Select the smallest safe tool workflow that can answer the user question.
+
+Use only the tools defined by the submit_agent_plan function schema. Do not
+answer the question. Submit one plan. The final two stages must retrieve and
+verify evidence before grounded generation. Analytical tasks must include the
+relevant deterministic statistics tools.
+
+User question:
+{{query}}
+
+Already selected filters:
+{{filters_json}}

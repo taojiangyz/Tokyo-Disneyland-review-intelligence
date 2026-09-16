@@ -9,6 +9,7 @@ services:
       - "127.0.0.1:8000:8000"
     volumes:
       - ./data:/app/data
+      - ./evals/results:/app/evals/results
       - model-cache:/root/.cache
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8000/health"]

@@ -1,14 +1,21 @@
 import os
 import logging
+import json
 from pathlib import Path
 
 from dotenv import load_dotenv
 from google import genai
+from google.genai import types
+
+from app.agent.tool_contracts import AgentPlan, submit_plan_function_schema
+from app.prompts import PromptRegistry
 
 logger = logging.getLogger(__name__)
 
 
 class GeminiService:
+    provider_name = "gemini"
+
     def __init__(self) -> None:
         load_dotenv(dotenv_path=Path(".env"))
 
@@ -27,38 +34,34 @@ class GeminiService:
             "gemini-3.5-flash-lite",
         )
         self.last_model_name = model_name
+        self.last_prompt_id: str | None = None
+        self.last_prompt_version: str | None = None
+        self.last_usage: dict[str, int] = {}
+        self.prompt_registry = PromptRegistry()
         self.client = genai.Client(api_key=api_key)
+
+    def reset_tracking(self) -> None:
+        self.last_prompt_id = None
+        self.last_prompt_version = None
+        self.last_usage = {}
+
+    def _render_prompt(self, prompt_id: str, **values: str) -> str:
+        registry = getattr(self, "prompt_registry", None) or PromptRegistry()
+        template = registry.get(prompt_id)
+        self.last_prompt_id = template.prompt_id
+        self.last_prompt_version = template.version
+        return template.render(**values)
 
     def generate_answer(
         self,
         query: str,
         evidence_text: str,
     ) -> str:
-        prompt = f"""
-You are an internal consumer-review analysis assistant for
-Tokyo Disneyland.
-
-Answer only from the review evidence provided below.
-Do not use external knowledge or unsupported assumptions.
-
-Requirements:
-1. Answer in the same language as the user's question.
-2. Summarize two to four main findings.
-3. Cite at least one review_id after every main finding,
-   using the format [review_id].
-4. Use a review only when it directly supports the finding.
-5. Do not generalize a small number of reviews to all visitors.
-6. Do not invent percentages, counts, or statistics.
-7. Clearly state when the evidence is insufficient.
-8. End with an Evidence scope statement explaining that
-   the answer is based only on the retrieved reviews.
-
-Question:
-{query}
-
-Review evidence:
-{evidence_text}
-"""
+        prompt = self._render_prompt(
+            "review_answer",
+            query=query,
+            evidence_text=evidence_text,
+        )
 
         return self._generate_with_fallback(prompt)
 
@@ -69,33 +72,67 @@ Review evidence:
         evidence_text: str,
         analytics_json: str,
     ) -> str:
-        prompt = f"""
-You are a review-intelligence agent for Tokyo Disneyland.
-
-Complete the requested business task using only the deterministic analytics
-and retrieved review evidence below. Answer in the same language as the user.
-
-Rules:
-1. Never invent counts, percentages, averages, dates, or market differences.
-2. Quantitative claims must come directly from the analytics JSON.
-3. Qualitative claims must cite at least one review ID in [review_id] format.
-   Put each review ID in its own brackets; do not combine multiple IDs inside
-   one bracket and do not add labels such as "Review:" inside the brackets.
-4. Clearly distinguish customer evidence from your proposed management action.
-5. Do not generalize a small evidence sample to all visitors.
-6. If evidence is insufficient, state that limitation instead of guessing.
-7. End with an Evidence scope statement.
-
-Task type: {task}
-Question: {query}
-
-Deterministic analytics:
-{analytics_json}
-
-Retrieved evidence:
-{evidence_text}
-"""
+        prompt = self._render_prompt(
+            "agent_answer",
+            query=query,
+            task=task,
+            evidence_text=evidence_text,
+            analytics_json=analytics_json,
+        )
         return self._generate_with_fallback(prompt)
+
+    def plan_agent_tools(
+        self,
+        query: str,
+        filters: dict[str, object],
+    ) -> AgentPlan:
+        """Ask Gemini for one bounded native function call and validate it."""
+        prompt = self._render_prompt(
+            "tool_planner",
+            query=query,
+            filters_json=json.dumps(filters, ensure_ascii=False, sort_keys=True),
+        )
+        declaration = types.FunctionDeclaration(
+            name="submit_agent_plan",
+            description="Submit a validated, bounded review-analysis tool plan.",
+            parametersJsonSchema=submit_plan_function_schema(),
+        )
+        config = types.GenerateContentConfig(
+            temperature=0,
+            tools=[types.Tool(functionDeclarations=[declaration])],
+            toolConfig=types.ToolConfig(
+                functionCallingConfig=types.FunctionCallingConfig(
+                    mode=types.FunctionCallingConfigMode.ANY,
+                    allowedFunctionNames=["submit_agent_plan"],
+                )
+            ),
+            automaticFunctionCalling=types.AutomaticFunctionCallingConfig(
+                disable=True
+            ),
+        )
+        last_error: Exception | None = None
+        for model_name in dict.fromkeys(
+            [self.model_name, self.fallback_model_name]
+        ):
+            try:
+                response = self.client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=config,
+                )
+                calls = response.function_calls or []
+                if len(calls) != 1 or calls[0].name != "submit_agent_plan":
+                    raise ValueError("Model did not return one submit_agent_plan call")
+                self.last_model_name = model_name
+                return AgentPlan.model_validate(dict(calls[0].args or {}))
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "Agent planning failed; trying fallback model",
+                    extra={"model": model_name},
+                )
+        assert last_error is not None
+        raise last_error
 
     def _generate_with_fallback(self, prompt: str) -> str:
         models = list(
@@ -111,6 +148,18 @@ Retrieved evidence:
                     contents=prompt,
                 )
                 self.last_model_name = model_name
+                usage = getattr(response, "usage_metadata", None)
+                self.last_usage = {
+                    "prompt_tokens": int(
+                        getattr(usage, "prompt_token_count", 0) or 0
+                    ),
+                    "completion_tokens": int(
+                        getattr(usage, "candidates_token_count", 0) or 0
+                    ),
+                    "total_tokens": int(
+                        getattr(usage, "total_token_count", 0) or 0
+                    ),
+                }
                 return response.text or "Gemini returned an empty response."
             except Exception as exc:
                 last_error = exc

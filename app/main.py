@@ -20,7 +20,7 @@ from app.schemas import (
     RetrieveResponse,
 )
 from app.agent import ReviewAgent
-from app.services.gemini_service import GeminiService
+from app.services.llm_service import ReviewLLMService, build_llm_service
 from app.services.rag_service import RagService
 from app.services.topic_service import TopicService
 from app.logging_config import configure_logging
@@ -47,11 +47,12 @@ async def lifespan(app: FastAPI):
         generations_per_day=_int_setting("ALADDIN_MAX_GENERATIONS_PER_DAY", 0),
     )
     app.state.rag_service = RagService()
-    app.state.gemini_service = GeminiService()
+    app.state.llm_service = build_llm_service()
+    app.state.gemini_service = app.state.llm_service
     app.state.topic_service = TopicService()
     app.state.review_agent = ReviewAgent(
         app.state.rag_service,
-        app.state.gemini_service,
+        app.state.llm_service,
         app.state.topic_service,
     )
 
@@ -258,9 +259,10 @@ def analyze_reviews(
 
     evidence_text = "\n\n".join(evidence_blocks)
 
-    gemini_service: GeminiService = (
-        request.app.state.gemini_service
+    llm_service: ReviewLLMService = (
+        request.app.state.llm_service
     )
+    llm_service.reset_tracking()
 
     generation_start = perf_counter()
 
@@ -274,7 +276,7 @@ def analyze_reviews(
         generation_status = "skipped_no_evidence"
     else:
         try:
-            answer = gemini_service.generate_answer(
+            answer = llm_service.generate_answer(
                 query=request_body.query,
                 evidence_text=evidence_text,
             )
@@ -350,10 +352,12 @@ def analyze_reviews(
             "ranking_changes": [],
         },
         "generation": {
-            "provider": "Gemini",
-            "model": gemini_service.last_model_name,
+            "provider": llm_service.provider_name,
+            "model": llm_service.last_model_name,
             "evidence_count": len(evidence),
-            "prompt_version": "v1",
+            "prompt_id": llm_service.last_prompt_id,
+            "prompt_version": llm_service.last_prompt_version,
+            "usage": llm_service.last_usage,
             "status": generation_status,
         },
         "timing_ms": {
@@ -384,6 +388,7 @@ def agent_analyze_reviews(
     request: Request,
 ) -> AgentAnalyzeResponse:
     request_start = perf_counter()
+    request.app.state.llm_service.reset_tracking()
     date_from = (
         request_body.date_from.isoformat()
         if request_body.date_from
@@ -429,7 +434,13 @@ def agent_analyze_reviews(
         trace={
             "agent_version": "mvp-v1",
             "tool_count": len(state.plan),
-            "model": request.app.state.gemini_service.last_model_name,
+            "provider": request.app.state.llm_service.provider_name,
+            "model": request.app.state.llm_service.last_model_name,
+            "prompt_id": request.app.state.llm_service.last_prompt_id,
+            "prompt_version": (
+                request.app.state.llm_service.last_prompt_version
+            ),
+            "usage": request.app.state.llm_service.last_usage,
             "total_ms": round(
                 (perf_counter() - request_start) * 1000,
                 2,

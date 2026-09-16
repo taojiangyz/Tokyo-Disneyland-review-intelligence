@@ -241,6 +241,16 @@ Run the same assertions end to end against the local Agent API only when desired
 make agent-eval-live
 ```
 
+For an inexpensive but representative live check, use the curated smoke suite.
+It covers evidence Q&A, root-cause analysis, market comparison, improvement
+planning, and no-evidence abstention instead of simply taking the first five
+cases:
+
+```bash
+python -m scripts.run_agent_evaluation --live --smoke \
+  --output evals/results/agent_gemini_smoke.json
+```
+
 Docker Compose equivalent:
 
 ```bash
@@ -250,14 +260,57 @@ docker compose exec api python -m scripts.run_agent_evaluation \
 
 The live run can call Gemini and is protected by the configured daily generation limit. Provider-failure behavior is tested with deterministic fakes in the unit suite rather than deliberately causing an external outage.
 
-Validated on 2026-08-25:
+Evaluation reports include overall and per-category pass rates. Live reports
+also aggregate prompt/completion/total tokens, mean/P50/P95 end-to-end latency,
+and failed-case attribution across prompt, retrieval, model, data, and
+orchestration layers. This makes regressions diagnosable instead of reducing
+the result to one pass count.
+
+Validated on 2026-09-16:
 
 | Agent evaluation | Result | Scope |
 |---|---:|---|
 | Structural suite | **40/40 passed** | Routing, inferred markets, filter precedence, and tool plans; no Gemini calls |
-| Live Docker smoke test | **5/5 passed** | End-to-end API, retrieval, deterministic analytics, Gemini generation, and citation containment |
+| Curated Docker Live smoke test | **5/5 passed** | All four Agent tasks plus no-evidence abstention; retrieval, deterministic analytics, Gemini generation, and citation containment |
 
 The five-case live run is deliberately reported as a smoke test, not as a claim that all 40 cases were executed end to end. This keeps provider cost and demo-rate limits controlled while preserving a reproducible full-suite command.
+
+The latest instrumented Gemini smoke run used prompt `agent_answer` version
+`1.0.0` and `gemini-3.5-flash-lite`. It consumed **8,547 tokens** across five
+requests (one no-evidence case correctly skipped generation), with **3.04 s
+mean**, **3.39 s P50**, and **4.11 s P95** end-to-end latency. Tool timing
+showed that grounded generation averaged **2.61 s** across all five cases
+(about **3.26 s** over the four generated answers), while retrieval averaged
+**0.40 s** and deterministic statistics remained below **0.09 s**. No prompt,
+retrieval, model, data, or orchestration failures were recorded.
+
+### Versioned prompts
+
+Generation prompts live under [`prompts/`](prompts/) and are selected through
+`prompts/registry.json`. Every response trace records the prompt ID and semantic
+version, so prompt changes can be reviewed and compared against the fixed eval
+sets instead of being tuned invisibly inside Python code.
+
+### Bounded native function calling
+
+The default deterministic router remains the low-cost, reproducible path. Set
+`ALADDIN_LLM_PLANNER_ENABLED=true` to let Gemini submit one native
+`submit_agent_plan` function call before execution. The returned plan is parsed
+through strict Pydantic contracts: only six registered tools are allowed,
+arguments reject unknown fields, evidence limits are bounded, the workflow is
+limited to six steps, and retrieval must be followed by evidence verification
+before generation. Invalid calls automatically fall back to the deterministic
+router and expose the fallback reason in `analytics.planning`.
+
+### Provider portability
+
+Set `ALADDIN_LLM_PROVIDER=gemini` for the default provider or
+`ALADDIN_LLM_PROVIDER=openai_compatible` for an Ollama, vLLM, or internal
+OpenAI-compatible endpoint. Retrieval, tool contracts, prompts, and evaluation
+remain unchanged. Response traces include provider, actual model, prompt
+version, and reported token usage. See the
+[model migration guide](docs/model-migration.md) for configuration and parity
+evaluation commands.
 
 Generate a pooled relevance-labeling file and compare all retrieval modes:
 
