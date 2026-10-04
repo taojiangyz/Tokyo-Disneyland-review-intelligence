@@ -5,6 +5,8 @@ import re
 
 from dotenv import load_dotenv
 from google import genai
+from app.services.llm_telemetry import generate_text
+from app.services.translation_parsing import parse_translation
 
 KOREAN_PATTERN = re.compile(r"[\uac00-\ud7a3]")
 DEFAULT_CACHE_PATH = Path("evals/annotations/translation_cache.json")
@@ -48,16 +50,9 @@ Reviews:
 {prompt_items}
 """
     client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(
-        model=model_name,
-        contents=prompt,
-    )
-    raw_text = (response.text or "").strip()
-    if raw_text.startswith("```"):
-        raw_text = raw_text.removeprefix("```json").removeprefix("```")
-        raw_text = raw_text.removesuffix("```").strip()
-    translations = json.loads(raw_text)
     expected_ids = {item["review_id"] for item in items}
-    if set(translations) != expected_ids:
-        raise ValueError("Translation response IDs do not match the request")
-    return {str(key): str(value) for key, value in translations.items()}
+    raw_text = generate_text(
+        client, [model_name], prompt, operation="annotation_translation",
+        validator=lambda text: parse_translation(text, ids=expected_ids),
+    )
+    return parse_translation(raw_text, ids=expected_ids)

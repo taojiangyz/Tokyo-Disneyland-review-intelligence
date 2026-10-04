@@ -6,6 +6,7 @@ services:
       - "8000:8000"
     volumes:
       - ./data:/app/data
+      - ./evals/results:/app/evals/results
       - model-cache:/root/.cache
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8000/health"]
@@ -18,6 +19,8 @@ services:
     build: .
     command: ["streamlit", "run", "demo_v2.py", "--server.address=0.0.0.0", "--server.port=8501"]
     env_file: .env
+    volumes:
+      - ./evals/results:/app/evals/results
     environment:
       ALADDIN_API_BASE_URL: http://api:8000
     ports:

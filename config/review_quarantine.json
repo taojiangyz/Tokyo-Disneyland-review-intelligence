@@ -1,0 +1,11 @@
+{
+  "version": "2026-10-04",
+  "reviews": [
+    {
+      "review_id": "221035459",
+      "status": "excluded",
+      "reason": "Review describes Mount Fuji, a guide, a pirate ship and cable car rather than Tokyo Disneyland.",
+      "basis": "User annotation market_kr_en: relevance 0, noted Mount Fuji domain mismatch."
+    }
+  ]
+}

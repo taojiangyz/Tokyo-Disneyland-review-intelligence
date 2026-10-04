@@ -40,3 +40,7 @@ docker-up:
 
 docker-down:
 	docker compose down
+
+.PHONY: llm-summary
+llm-summary:
+	$(PYTHON) scripts/summarize_llm_usage.py

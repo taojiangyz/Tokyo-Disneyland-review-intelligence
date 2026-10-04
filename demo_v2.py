@@ -8,6 +8,10 @@ import requests
 import streamlit as st
 from dotenv import load_dotenv
 from google import genai
+from uuid import uuid4
+from time import perf_counter
+from app.services.llm_telemetry import generate_text, write_event
+from app.services.translation_parsing import parse_translation
 
 
 API_BASE_URL = os.getenv("ALADDIN_API_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
@@ -161,6 +165,7 @@ def translate_reviews(
     evidence: list[dict],
     target_language: str,
     unavailable_message: str,
+    *, request_id=None,
 ) -> list[str]:
     """Translate the visible evidence reviews in one Gemini request."""
     visible_items = evidence
@@ -211,42 +216,13 @@ Reviews:
     try:
         client = genai.Client(api_key=api_key)
 
-        response = None
-        last_error = None
-        for candidate_model in dict.fromkeys(
-            [model_name, fallback_model_name]
-        ):
-            try:
-                response = client.models.generate_content(
-                    model=candidate_model,
-                    contents=prompt,
-                )
-                break
-            except Exception as exc:
-                last_error = exc
+        raw_text = generate_text(
+            client, [model_name, fallback_model_name], prompt,
+            request_id=request_id, operation="ui_translation",
+            validator=lambda text: parse_translation(text, count=len(visible_items)),
+        ).strip()
 
-        if response is None:
-            assert last_error is not None
-            raise last_error
-
-        raw_text = (response.text or "").strip()
-
-        if raw_text.startswith("```"):
-            raw_text = raw_text.removeprefix("```json")
-            raw_text = raw_text.removeprefix("```")
-            raw_text = raw_text.removesuffix("```").strip()
-
-        translations = json.loads(raw_text)
-
-        if (
-            not isinstance(translations, list)
-            or len(translations) != len(visible_items)
-        ):
-            raise ValueError(
-                "Gemini returned an unexpected translation format."
-            )
-
-        return [str(item) for item in translations]
+        return parse_translation(raw_text, count=len(visible_items))
 
     except Exception:
         return [
@@ -651,6 +627,8 @@ if analyze_clicked:
         "top_k": evidence_count,
     }
 
+    interaction_id = str(uuid4())
+    interaction_start = perf_counter()
     try:
         with st.spinner(
             t["analyzing"]
@@ -658,6 +636,7 @@ if analyze_clicked:
             response = requests.post(
                 API_URL,
                 json=payload,
+                headers={"X-Request-ID": interaction_id},
                 timeout=180,
             )
 
@@ -689,8 +668,13 @@ if analyze_clicked:
                     evidence,
                     t["translation_target"],
                     t["translation_unavailable"],
+                    request_id=interaction_id,
                 )
             )
+
+        write_event({"event_type": "ui_interaction", "request_id": interaction_id,
+                     "duration_ms": round((perf_counter() - interaction_start) * 1000, 2),
+                     "generation_status": generation_status})
 
         ratings = [
             float(item["rating"])

@@ -1,4 +1,5 @@
 from qdrant_client import models
+from app.services.review_quarantine import excluded_review_ids
 
 
 def to_sparse_vector(
@@ -63,10 +64,14 @@ def build_filter(
             )
         )
 
-    if not conditions:
+    excluded = excluded_review_ids()
+    exclusions = [models.FieldCondition(
+        key="review_id", match=models.MatchAny(any=excluded),
+    )] if excluded else []
+    if not conditions and not exclusions:
         return None
 
-    return models.Filter(must=conditions)
+    return models.Filter(must=conditions or None, must_not=exclusions or None)
 
 from pathlib import Path
 from time import perf_counter
