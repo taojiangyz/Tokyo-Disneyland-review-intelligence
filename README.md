@@ -15,9 +15,9 @@ The project demonstrates an end-to-end applied AI workflow: reproducible data in
 ## What it can do
 
 - Answer free-form questions in English, Japanese, or Chinese instead of relying on predefined prompts.
-- Filter 2,049 reviews by one or more markets, date range, and rating range.
+- Filter 2,048 eligible reviews by market, date and rating; all 2,049 source records remain indexed, including one quarantined record. Topic statistics apply the same quarantine rules to the available derived labels.
 - Route questions into evidence Q&A, root-cause analysis, market comparison, or improvement planning.
-- Calculate market/topic/sentiment statistics from all 2,049 AI-assisted labels rather than asking Gemini to estimate counts.
+- Calculate market/topic/sentiment statistics from eligible AI-assisted labels (2,049 original labels retained) rather than asking Gemini to estimate counts.
 - Use BGE-M3 Dense Top 5 in the interactive path, selected through human-labeled evaluation.
 - Retain sparse/RRF and `BAAI/bge-reranker-v2-m3` modes for reproducible offline comparison.
 - Generate evidence-based answers with review ID citations.
@@ -414,13 +414,40 @@ Every response records:
 
 API access logs are emitted as JSON lines with request ID, method, path, status code, and duration. The same request ID is returned in the `X-Request-ID` response header for troubleshooting.
 
+## LLM usage and latency telemetry
+
+Answer generation, UI evidence translation, and annotation translation now record
+application-level Gemini attempts as local JSONL. The UI and API share a request
+ID; each fallback has its own attempt record. No prompts, answers, review text or
+API keys are stored in these telemetry files.
+
+```bash
+make llm-summary
+# Optional: summarize a single UI/API request
+python scripts/summarize_llm_usage.py --request-id YOUR_REQUEST_ID
+```
+
+The report contains reported token totals, unknown-usage counts, completed/failed
+attempts, fallback counts, estimated paid cost, and P50/P95 latency. Free-tier usage
+still returns token metadata. **Estimated paid cost is not a bill:** actual billed
+cost is unknown without billing reconciliation. Prices have explicit model names,
+versions and validity dates; missing usage or prices do not become zero cost.
+
+Normal regression cases now require completed generation, so a degraded response
+cannot silently pass answer checks. Citation-ID checks still do not establish
+semantic faithfulness. See [LLMOps scope, configuration and validation](docs/llmops.md).
+
+## LLMOps release candidate
+
+Main integration passed 95 automated tests and 40/40 fixture-based Agent structural cases. See [delivered features, validation and limitations](docs/release-candidate-llmops.md). The final presentation-policy change passed 39 tests and offline replay of 26 saved answers. The preceding live API run passed structural checks on 26 development cases; this is not a semantic accuracy score.
+
 ## Current limitations
 
 - The Qdrant database is local and supports one process at a time.
 - User-facing answer translation is generated on demand; annotation translations are cached locally to avoid repeated Gemini usage.
 - Evidence sufficiency is prompt-guided; a calibrated reranker threshold is planned.
-- The retrieval benchmark currently covers 15 questions and 241 human-verified query/review pairs; broader domain coverage and confidence intervals are still needed.
-- The application has no authentication or multi-tenant isolation yet.
+- The retrieval benchmark covers 15 existing questions, initially 241 human judgments and now a separate 257-label snapshot. Broader coverage and held-out validation are still needed.
+- Interview-demo password/token checks and rate limits are supported; these are not enterprise authentication or multi-tenant isolation.
 
 ## Roadmap
 
@@ -442,3 +469,9 @@ tests/                  Automated unit tests
 demo_v2.py              Streamlit management UI
 Makefile                Reproducible developer commands
 ```
+
+[2026-10-04 real API regression and qualitative findings](docs/llmops-regression-2026-10-04.md)
+
+[Full v2 prompt rerun: results and remaining limitations](docs/llmops-v2-full-regression-2026-10-04.md)
+
+[Auditable review quarantine and validation](docs/review-quarantine.md)

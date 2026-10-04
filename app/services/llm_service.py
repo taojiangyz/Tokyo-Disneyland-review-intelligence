@@ -8,6 +8,8 @@ import requests
 
 from app.agent.tool_contracts import AgentPlan, submit_plan_function_schema
 from app.prompts import PromptRegistry
+from app.services.llm_tracking import RequestTracking
+from app.services.answer_presentation import present_answer, answer_language
 from app.services.gemini_service import GeminiService
 
 
@@ -20,7 +22,7 @@ class ReviewLLMService(Protocol):
 
     def reset_tracking(self) -> None: ...
 
-    def generate_answer(self, query: str, evidence_text: str) -> str: ...
+    def generate_answer(self, query: str, evidence_text: str, *, request_id=None, attempts=None) -> str: ...
 
     def generate_agent_answer(
         self,
@@ -37,7 +39,7 @@ class ReviewLLMService(Protocol):
     ) -> AgentPlan: ...
 
 
-class OpenAICompatibleService:
+class OpenAICompatibleService(RequestTracking):
     """Review LLM service for Ollama, vLLM, and OpenAI-compatible endpoints."""
 
     provider_name = "openai_compatible"
@@ -69,12 +71,8 @@ class OpenAICompatibleService:
         self.last_prompt_version: str | None = None
         self.last_usage: dict[str, int] = {}
 
-    def reset_tracking(self) -> None:
-        self.last_prompt_id = None
-        self.last_prompt_version = None
-        self.last_usage = {}
-
     def _render_prompt(self, prompt_id: str, **values: str) -> str:
+        values.setdefault("language", answer_language(values.get("query", "")))
         template = self.prompt_registry.get(prompt_id)
         self.last_prompt_id = template.prompt_id
         self.last_prompt_version = template.version
@@ -117,14 +115,16 @@ class OpenAICompatibleService:
             raise RuntimeError("OpenAI-compatible provider returned empty content")
         return str(content)
 
-    def generate_answer(self, query: str, evidence_text: str) -> str:
-        return self._generate_text(
+    def generate_answer(self, query: str, evidence_text: str, *, request_id=None, attempts=None) -> str:
+        answer = self._generate_text(
             self._render_prompt(
                 "review_answer",
                 query=query,
                 evidence_text=evidence_text,
             )
         )
+
+        return present_answer(query, answer)
 
     def generate_agent_answer(
         self,

@@ -1,7 +1,7 @@
 {
   "review_answer": {
-    "version": "1.0.0",
-    "file": "review_answer_v1.txt"
+    "version": "3.0.0",
+    "file": "review_answer_v3.txt"
   },
   "agent_answer": {
     "version": "1.0.0",

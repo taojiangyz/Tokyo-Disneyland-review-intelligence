@@ -46,7 +46,8 @@ def test_openai_compatible_generation_records_usage() -> None:
         session=session,
     )
     answer = service.generate_answer("Question", "[r1] Evidence")
-    assert answer == "Answer [r1]"
+    assert answer.startswith("Answer [r1]")
+    assert "Evidence scope statement:" in answer
     assert service.last_usage["total_tokens"] == 120
     assert session.requests[0][0].endswith("/chat/completions")
 

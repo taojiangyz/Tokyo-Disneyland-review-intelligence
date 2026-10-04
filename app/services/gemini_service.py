@@ -9,11 +9,14 @@ from google.genai import types
 
 from app.agent.tool_contracts import AgentPlan, submit_plan_function_schema
 from app.prompts import PromptRegistry
+from app.services.llm_tracking import RequestTracking
+from app.services.llm_telemetry import generate_text
+from app.services.answer_presentation import present_answer, answer_language
 
 logger = logging.getLogger(__name__)
 
 
-class GeminiService:
+class GeminiService(RequestTracking):
     provider_name = "gemini"
 
     def __init__(self) -> None:
@@ -40,13 +43,9 @@ class GeminiService:
         self.prompt_registry = PromptRegistry()
         self.client = genai.Client(api_key=api_key)
 
-    def reset_tracking(self) -> None:
-        self.last_prompt_id = None
-        self.last_prompt_version = None
-        self.last_usage = {}
-
     def _render_prompt(self, prompt_id: str, **values: str) -> str:
         registry = getattr(self, "prompt_registry", None) or PromptRegistry()
+        values.setdefault("language", answer_language(values.get("query", "")))
         template = registry.get(prompt_id)
         self.last_prompt_id = template.prompt_id
         self.last_prompt_version = template.version
@@ -56,6 +55,7 @@ class GeminiService:
         self,
         query: str,
         evidence_text: str,
+        *, request_id=None, attempts=None,
     ) -> str:
         prompt = self._render_prompt(
             "review_answer",
@@ -63,7 +63,9 @@ class GeminiService:
             evidence_text=evidence_text,
         )
 
-        return self._generate_with_fallback(prompt)
+        return present_answer(query, self._generate_with_fallback(
+            prompt, request_id=request_id, attempts=attempts, operation="answer"
+        ))
 
     def generate_agent_answer(
         self,
@@ -134,38 +136,20 @@ class GeminiService:
         assert last_error is not None
         raise last_error
 
-    def _generate_with_fallback(self, prompt: str) -> str:
-        models = list(
-            dict.fromkeys(
-                [self.model_name, self.fallback_model_name]
-            )
+    def _generate_with_fallback(self, prompt: str, *, request_id=None, attempts=None, operation="agent_answer") -> str:
+        records = attempts if attempts is not None else []
+        text = generate_text(
+            self.client, [self.model_name, self.fallback_model_name], prompt,
+            request_id=request_id, operation=operation,
+            prompt_version=self.last_prompt_version, attempts=records,
         )
-        last_error: Exception | None = None
-        for model_name in models:
-            try:
-                response = self.client.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                )
-                self.last_model_name = model_name
-                usage = getattr(response, "usage_metadata", None)
-                self.last_usage = {
-                    "prompt_tokens": int(
-                        getattr(usage, "prompt_token_count", 0) or 0
-                    ),
-                    "completion_tokens": int(
-                        getattr(usage, "candidates_token_count", 0) or 0
-                    ),
-                    "total_tokens": int(
-                        getattr(usage, "total_token_count", 0) or 0
-                    ),
-                }
-                return response.text or "Gemini returned an empty response."
-            except Exception as exc:
-                last_error = exc
-                logger.warning(
-                    "Gemini model unavailable; trying fallback",
-                    extra={"model": model_name},
-                )
-        assert last_error is not None
-        raise last_error
+        completed = next(a for a in reversed(records) if a["status"] == "completed")
+        self.last_model_name = completed["model"]
+        self.last_usage = {
+            name: completed["usage"][field]
+            for name, field in [("prompt_tokens", "prompt_token_count"),
+                                ("completion_tokens", "candidates_token_count"),
+                                ("total_tokens", "total_token_count")]
+            if completed["usage"][field] is not None
+        }
+        return text

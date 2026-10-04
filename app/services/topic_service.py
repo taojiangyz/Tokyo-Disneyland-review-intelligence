@@ -3,6 +3,7 @@ import os
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
+from app.services.review_quarantine import excluded_review_ids
 
 
 class TopicService:
@@ -60,7 +61,9 @@ class TopicService:
     def distribution(self, filters: dict[str, Any]) -> dict[str, Any]:
         if not self.available:
             return {"available": False, "review_count": 0, "topics": []}
-        matched = [r for r in self.records if self._matches(r, filters)]
+        excluded = set(excluded_review_ids())
+        matched = [r for r in self.records
+                   if str(r.get("review_id")) not in excluded and self._matches(r, filters)]
         topic_counts: Counter[str] = Counter()
         sentiments: Counter[str] = Counter()
         confidence_total = 0.0
@@ -92,7 +95,9 @@ class TopicService:
     def compare_markets(self, filters: dict[str, Any]) -> dict[str, Any]:
         if not self.available:
             return {"available": False, "markets": {}}
-        matched = [r for r in self.records if self._matches(r, filters)]
+        excluded = set(excluded_review_ids())
+        matched = [r for r in self.records
+                   if str(r.get("review_id")) not in excluded and self._matches(r, filters)]
         by_market: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for record in matched:
             if record.get("region"):

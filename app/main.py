@@ -21,10 +21,12 @@ from app.schemas import (
 )
 from app.agent import ReviewAgent
 from app.services.llm_service import ReviewLLMService, build_llm_service
+from app.services.answer_presentation import OUTPUT_POLICY_VERSION
 from app.services.rag_service import RagService
 from app.services.topic_service import TopicService
 from app.logging_config import configure_logging
 from app.security import DemoUsageGuard
+from app.services.llm_telemetry import CURRENT_REQUEST_ID
 
 
 load_dotenv()
@@ -73,6 +75,8 @@ app = FastAPI(
 @app.middleware("http")
 async def log_request(request: Request, call_next):
     request_id = request.headers.get("X-Request-ID") or str(uuid4())
+    request.state.request_id = request_id
+    request_id_token = CURRENT_REQUEST_ID.set(request_id)
     started = perf_counter()
     status_code = 500
     try:
@@ -119,6 +123,7 @@ async def log_request(request: Request, call_next):
         response.headers["X-Request-ID"] = request_id
         return response
     finally:
+        CURRENT_REQUEST_ID.reset(request_id_token)
         logger.info(
             "request_completed",
             extra={
@@ -267,9 +272,12 @@ def analyze_reviews(
     generation_start = perf_counter()
 
     generation_status = "completed"
+    attempts = []
 
     if not ranked_results:
         answer = (
+            "没有评论符合所选筛选条件，缺少回答此问题所需的证据。"
+            if any("\u4e00" <= c <= "\u9fff" for c in request_body.query) else
             "No reviews matched the selected filters, so there is "
             "not enough evidence to answer this question."
         )
@@ -279,6 +287,7 @@ def analyze_reviews(
             answer = llm_service.generate_answer(
                 query=request_body.query,
                 evidence_text=evidence_text,
+                request_id=request.state.request_id, attempts=attempts,
             )
         except Exception:
             logger.exception("Answer generation failed")
@@ -320,6 +329,7 @@ def analyze_reviews(
     }
 
     trace = {
+        "request_id": request.state.request_id,
         "intent": {
             "task": "review_analysis",
             "query_language": "zh"
@@ -353,11 +363,15 @@ def analyze_reviews(
         },
         "generation": {
             "provider": llm_service.provider_name,
-            "model": llm_service.last_model_name,
+            "model": (next((a["model"] for a in reversed(attempts) if a["status"] == "completed"), None)
+                      if llm_service.provider_name == "gemini" else
+                      (llm_service.last_model_name if generation_status == "completed" else None)),
+            "attempts": attempts,
             "evidence_count": len(evidence),
             "prompt_id": llm_service.last_prompt_id,
             "prompt_version": llm_service.last_prompt_version,
             "usage": llm_service.last_usage,
+            "output_policy_version": OUTPUT_POLICY_VERSION if generation_status == "completed" else None,
             "status": generation_status,
         },
         "timing_ms": {

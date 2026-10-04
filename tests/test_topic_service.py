@@ -36,3 +36,18 @@ def test_missing_labels_degrades_gracefully(tmp_path):
     service = TopicService(tmp_path / "missing.jsonl")
     assert not service.available
     assert not service.distribution({})["available"]
+
+
+def test_quarantine_applies_to_both_topic_aggregations(tmp_path, monkeypatch):
+    from app.services import review_quarantine
+    path = tmp_path / 'labels.jsonl'
+    write_labels(path)
+    policy = tmp_path / 'policy.json'
+    monkeypatch.setattr(review_quarantine, 'QUARANTINE_PATH', policy)
+    policy.write_text(json.dumps({'reviews':[{'review_id':'r1','status':'excluded'}]}))
+    service = TopicService(path)
+    assert service.distribution({})['review_count'] == 2
+    assert service.compare_markets({})['markets']['KR']['review_count'] == 1
+    policy.write_text(json.dumps({'reviews':[{'review_id':'r1','status':'released'}]}))
+    assert service.distribution({})['review_count'] == 3
+    assert len(service.records) == 3

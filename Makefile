@@ -64,3 +64,7 @@ demo-up:
 
 demo-down:
 	./scripts/stop_interview_demo.sh
+
+.PHONY: llm-summary
+llm-summary:
+	$(PYTHON) scripts/summarize_llm_usage.py

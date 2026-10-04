@@ -1,8 +1,13 @@
 import argparse
+import hashlib
+import subprocess
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts.summarize_llm_usage import percentile
 from datetime import datetime, timezone
 import json
 import os
-from pathlib import Path
 from typing import Any
 
 import requests
@@ -55,7 +60,7 @@ def evaluate_response(case: dict[str, Any], response: dict[str, Any]) -> list[st
             failures.append(f"date {review_date} after filter")
 
     generation = response.get("trace", {}).get("generation", {})
-    expected_status = expected.get("generation_status")
+    expected_status = expected.get("generation_status", "completed")
     if expected_status and generation.get("status") != expected_status:
         failures.append(f"generation status is {generation.get('status')}")
 
@@ -114,6 +119,8 @@ def main() -> None:
             response = api_response.json()
             failures = evaluate_response(case, response)
             results.append({
+                "request_id": api_response.headers.get("X-Request-ID"),
+                "llm_attempts": response.get("trace", {}).get("generation", {}).get("attempts", []),
                 "id": case["id"],
                 "category": case["category"],
                 "passed": not failures,
@@ -125,7 +132,16 @@ def main() -> None:
         except requests.RequestException as exc:
             results.append({"id": case["id"], "category": case["category"], "passed": False, "failures": [str(exc)]})
 
+    try:
+        commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+        dirty = bool(subprocess.check_output(["git", "status", "--porcelain"], text=True).strip())
+    except (OSError, subprocess.CalledProcessError):
+        commit, dirty = None, None
+    latencies = [r["timing_ms"]["total"] for r in results if "total" in r.get("timing_ms", {})]
     report = {
+        "code_commit": commit, "working_tree_dirty": dirty,
+        "cases_sha256": hashlib.sha256(args.cases.read_bytes()).hexdigest(),
+        "total_latency_ms": {"samples": len(latencies), "p50": percentile(latencies, .5), "p95": percentile(latencies, .95)},
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "base_url": args.base_url,
         "total": len(results),
