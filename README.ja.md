@@ -6,16 +6,18 @@ Aladdin は、東京ディズニーランドのカスタマーレビューを分
 
 ## プロダクトデモ
 
-![Tokyo Disney Review Intelligence デモ](assets/demo/tokyo_disney_review_intelligence_demo.gif)
+![Tokyo Disney Review Intelligence Agent デモ](assets/demo/tokyo_disney_agent_demo.gif)
 
-この短縮デモでは、日本語 UI への切り替え、自由形式の業務質問、動的フィルター、根拠に基づく回答生成、参照レビューの展開を確認できます。
+このデモでは、日本語による市場比較質問、Agent の自動 Routing・Filter、監査可能な Tool Trace、全件 Topic 分析、根拠に基づく回答生成、参照レビューの展開を確認できます。
 
 本プロジェクトは、再現可能なデータ処理、人手評価で選定した Dense 検索、比較実験用の Hybrid / Reranker、根拠に基づく回答生成、回帰評価、可観測性、業務向け UI を含む、Applied AI のエンドツーエンド実装です。
 
 ## 主な機能
 
 - 英語・日本語・中国語などの自由形式質問に対応
-- 原文 2,049 件を保持し、除外対象 1 件を除く 2,048 件を市場、日付、評価で絞り込み
+- 原文 2,049 件を保持し、検索は除外対象 1 件を除く 2,048 件を市場、日付、評価で絞り込み（Topic 集計にも同じ除外ルールを適用）
+- 質問を根拠付き Q&A、Root-Cause、Market Comparison、Improvement Planning に自動分類
+- 元の 2,049 件の AI 支援ラベルを保持し、除外ルール適用後のラベルから市場・Topic・Sentiment を決定論的に集計
 - 対話処理では、人手評価で選定した BGE-M3 Dense Top 5 を使用
 - Sparse / RRF と `BAAI/bge-reranker-v2-m3` は再現可能なオフライン比較用として保持
 - Gemini による、レビュー ID を引用した根拠ベースの回答生成
@@ -28,17 +30,34 @@ Aladdin は、東京ディズニーランドのカスタマーレビューを分
 
 ```mermaid
 flowchart LR
-    A["多言語レビュー"] --> B["検証・正規化"]
-    B --> C["BGE-M3 Dense / Sparse Embedding"]
-    C --> D["ローカル Qdrant Index"]
-    U["質問・フィルター"] --> API["FastAPI 分析サービス"]
-    API --> D
-    D --> DR["評価で選定した Dense Top 5"]
-    DR --> G["Gemini 根拠ベース生成"]
-    G --> UI["Streamlit Evidence UI"]
-    DR --> UI
-    D -. "オフライン評価" .-> EXP["Sparse + RRF + Reranker"]
-    API --> T["Trace・処理時間"]
+    subgraph OFF["オフラインデータパイプライン"]
+        A["多言語レビュー"] --> B["検証・正規化"]
+        B --> C["BGE-M3 Embedding"]
+        C --> D["ローカル Qdrant Index"]
+        B --> L["Gemini Topic 事前ラベル"]
+        L --> TS["非公開 Topic Label Store"]
+    end
+
+    subgraph ON["オンライン Agent 分析"]
+        U["質問・任意フィルター"] --> UI["Streamlit UI"]
+        UI --> API["FastAPI"]
+        API --> AG["Agent Router・上限付き Plan"]
+        AG --> ST["決定論的統計"]
+        AG --> TP["Topic 分析"]
+        AG --> RT["Dense Top 5 検索"]
+        ST --> TS
+        TP --> TS
+        RT --> D
+        RT --> EV["Evidence 検証"]
+        ST --> G["Gemini 根拠ベース生成"]
+        TP --> G
+        EV --> G
+        G --> R["回答・根拠・Trace・処理時間"]
+        R --> API
+        API --> UI
+    end
+
+    D -. "オフライン評価のみ" .-> EXP["Hybrid RRF・Reranker 比較"]
 ```
 
 コンポーネントの責務、障害時の挙動、設計判断は [docs/architecture.md](docs/architecture.md) を参照してください。
@@ -95,6 +114,18 @@ docker compose up --build
 
 初回起動時は Embedding / Reranker モデルの取得に数分かかる場合があります。
 
+### 面接用の制御付き一時公開
+
+任意の `interview` Compose Profile は API を localhost に限定したまま、一時的な Cloudflare Quick Tunnel を追加します。`.env` に強力な `ALADDIN_DEMO_PASSWORD`、別の `ALADDIN_API_TOKEN`、Request / Generation 上限を設定して実行します。
+
+```bash
+make demo-up
+# 面接終了後
+make demo-down
+```
+
+Tunnel Log に表示される一時的な `trycloudflare.com` URL は停止後に無効になります。これはローカル実行 Application への制御付き外部アクセスであり、恒久的な Cloud Deployment ではありません。安全確認と外部回線 Test は [docs/interview-demo.md](docs/interview-demo.md) を参照してください。
+
 ## API
 
 `GET /api/v1/metadata` は、市場や日付などのフィルター候補とレビュー件数を返します。
@@ -115,6 +146,25 @@ docker compose up --build
 
 `POST /api/v1/retrieve` は Gemini を呼ばずに検索のみを実行します。`mode` は `dense`、`hybrid`、`hybrid_rerank` に対応し、`candidate_limit` で候補プールのサイズを制御できます。
 
+### AI 支援トピックラベル
+
+本 Project には、Version 管理された日英対応のトピック分類体系と、途中から再開できる Gemini 事前ラベル付け Pipeline が含まれます。各 Review に複数トピック、全体 Sentiment、Confidence を付与し、Agent が市場・評価・日付別のトピック分布を決定論的に集計します。
+
+```bash
+# まず小規模 Sample で API 使用量を確認
+python scripts/build_topic_labels.py --limit 40 --batch-size 20
+
+# 市場および低・高評価を均等に含む QA Sample
+python scripts/build_topic_labels.py --limit 60 --sample-strategy balanced
+
+# 後日再開（完了済み review_id は自動的に Skip）
+make topic-labels
+```
+
+`data/topic_labels.jsonl` は非公開の派生 Data であり、Review 原文と同様に Git から除外されます。AI 支援ラベルは Ground Truth ではありません。本番利用では Sampling、人手修正、Taxonomy の Version 管理、品質測定が必要です。
+
+v1.1 では全 2,049 件をラベル付けしました。低 Confidence および評価と Sentiment の不一致候補を意図的に多く含む 90 件を人手監査し、81 件を確認、9 件を Skip しました。確認済み Sample に対して、Topic 完全一致率は **93.8%**、Multi-label Micro-F1 は **98.2%**、Sentiment 正解率は **91.4%** でした。単純無作為抽出による母集団推定ではなく、Support の少ない Topic の結果は一般化できません。`make evaluate-topic-labels` でローカル再計算できます。
+
 ## テストと評価
 
 Unit Test：
@@ -131,15 +181,70 @@ make regression
 
 完全な回帰テストは Gemini を呼び出すため、API 使用料が発生する可能性があります。
 
+別の Agent 評価 Suite には、Task Routing、市場推論、苦情・低評価 Intent、明示 Filter 優先、Tool Plan、決定論的統計、Citation、Evidence なし、Provider 障害 Contract を扱う **英語・日本語・中国語 40 問**があります。構造評価は Gemini を呼ばず無料で実行できます。
+
+```bash
+make agent-eval
+```
+
+Docker Compose で Application が起動済みの場合は、API Container 内で同じ構造評価を実行できます。
+
+```bash
+docker compose exec api python -m scripts.run_agent_evaluation
+```
+
+必要な場合のみ、ローカル Agent API に対して End-to-End 評価を実行します。
+
+```bash
+make agent-eval-live
+```
+
+Docker Compose での同等コマンド：
+
+```bash
+docker compose exec api python -m scripts.run_agent_evaluation \
+  --live --base-url http://127.0.0.1:8000
+```
+
+Live 評価は Gemini を呼ぶ可能性があり、設定した1日あたりの Generation 上限で保護されます。Provider 障害は実際の障害を起こさず、Unit Test の決定論的 Fake で検証します。
+
+生成 Prompt は [`prompts/`](prompts/) に分離され、`registry.json` で有効な
+Prompt ID と Semantic Version を管理します。API Trace に Prompt ID と Version
+を記録するため、Python Code 内で感覚的に変更するのではなく、固定評価 Set と
+比較しながら変更できます。
+
+既定では低コストで再現可能な決定論的 Router を使用します。
+`ALADDIN_LLM_PLANNER_ENABLED=true` にすると、Gemini が Native Function Calling
+で `submit_agent_plan` を1回呼び出します。Plan は Pydantic Contract で検証され、
+登録済み Tool、引数範囲、最大6 Step、検索後の Evidence Verification を強制します。
+不正な Plan は決定論的 Router に Fallback し、理由を `analytics.planning` に残します。
+
+2026-08-25 検証結果：
+
+| Agent 評価 | 結果 | 検証範囲 |
+|---|---:|---|
+| 構造評価 Suite | **40/40 合格** | Routing、市場推論、明示 Filter 優先、Tool Plan。Gemini 呼び出しなし |
+| 選定 Docker Live Smoke Test | **5/5 合格** | 4種類のAgent TaskとEvidenceなしの棄却、検索、決定論的分析、Gemini生成、Citation範囲 |
+
+5 件の Live 実行は Smoke Test として明記しており、40 件すべてを End-to-End で実行したとは主張しません。これにより Provider Cost と Demo Rate Limit を抑えながら、完全な Suite の再現コマンドを維持しています。
+
+2026-09-16 の最新計測 Smoke Test は `agent_answer` Version `1.0.0` と
+`gemini-3.5-flash-lite` を使用しました。5 Request 合計は **8,547 Token**
+（Evidenceなしの1件は生成を正しくSkip）、End-to-End Latencyは平均 **3.04秒**、
+P50 **3.39秒**、P95 **4.11秒** でした。Grounded Generation は全5件平均
+**2.61秒**（実際に生成した4件では約 **3.26秒**）、Retrieval は平均 **0.40秒**、
+決定論的統計は **0.09秒未満** でした。Prompt、Retrieval、Model、Data、
+Orchestration の失敗はありませんでした。
+
 ## 人手評価済み検索結果
 
 15 問、241 件の Query / Review ペアに対して、0（無関係）、1（部分的に関連）、2（直接関連）の人手ラベルを作成しました。
 
-本番 API は **Dense Top 5** を使用します。5 件のエビデンスを Gemini に渡す実際の条件で、Recall@5 と nDCG@5 がともに最高だったためです。
+対話型 API は **Dense Top 5** を使用します。5 件のエビデンスを Gemini に渡す実際の条件で、Recall@5 と nDCG@5 がともに最高だったためです。
 
 | 検索方式 | Recall@5 | nDCG@5 | 平均処理時間 |
 |---|---:|---:|---:|
-| **Dense（本番デフォルト）** | **0.365** | **0.772** | **387 ms** |
+| **Dense（対話型デフォルト）** | **0.365** | **0.772** | **387 ms** |
 | Hybrid RRF | 0.314 | 0.707 | 243 ms |
 | Hybrid + Reranker（候補 10 件） | 0.344 | 0.758 | 3,467 ms |
 | Hybrid + Reranker（候補 20 件） | 0.335 | 0.744 | 6,834 ms |
@@ -163,6 +268,30 @@ Top 5 では Dense が Recall とランキング品質の両方で最高でし�
 - Gemini 障害時も取得済みレビューを表示し、`degraded` ステータスを返却
 - Gemini の Primary Model が一時的に過負荷の場合、設定済みの Fallback Model で回答生成と翻訳を再試行
 - 回答の引用 ID が返却エビデンスに含まれることを回帰テストで確認
+
+## Review Intelligence Agent
+
+既存 RAG API の互換性を保ちながら、評価済みの検索基盤を
+Tool-Using Analytics Agent に拡張しました。
+
+新しい `POST /api/v1/agent/analyze` は、質問を次の Task に振り分けます。
+
+- 根拠付き Q&A
+- Complaint Root-Cause Analysis
+- Market Comparison
+- Improvement Priority Planning
+
+Agent は、決定論的な Review Statistics、全件 Topic Distribution、
+Market Comparison、Dense Retrieval、Evidence Verification、Grounded
+Generation を順番に実行し、Task、Filter、Tool
+Output、Evidence、実行 Step、処理時間、最終回答を返します。件数・平均値は
+Code で計算し、Gemini に数値を推測させません。Root-Cause / Improvement
+Task は、Rating 条件が指定されない場合に 1～3 Star を対象とします。
+
+英語・日本語・中国語の質問から市場名と Complaint / Low-Rating Intent を
+自動抽出し、UI Filter が未指定の場合に適用します。現段階では安全で評価可能な
+固定上限付き Plan を採用し、会話 Memory、Replanning、より広い Agent Task
+Completion Evaluation は次の Milestone です。
 - API ログは JSON Lines 形式で Request ID、Method、Path、Status、処理時間を記録
 - `X-Request-ID` レスポンスヘッダーでログを追跡可能
 - データ検証と決定論的 Qdrant Point ID による再現性
@@ -220,3 +349,5 @@ Gemini 呼び出し追跡、token・推定費用・遅延の記録、回答の�
 自動テスト 39 件が成功しました。表示ルール追加前の実 API 回帰は 26 問（生成成功 22、証拠なしでスキップ 4）の構造チェックを通過しています。追加後は保存済み 26 回答でオフライン検証しました。意味的な正確性 100% や本番運用品質を示す結果ではありません。人手関連度ラベルは元の 241 件を保持し、追加分を含む 257 件のスナップショットを別途保存しています。
 
 [実装内容・検証範囲・既知の制約](docs/release-candidate-llmops.md)
+
+main 統合後：自動テスト 95 件、固定データによる Agent 構造評価 40/40 件が成功しました。実モデルの正確性評価とは区別しています。

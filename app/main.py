@@ -1,11 +1,17 @@
 from contextlib import asynccontextmanager
+import hmac
 import logging
+import os
 from time import perf_counter
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from dotenv import load_dotenv
 
 from app.schemas import (
+    AgentAnalyzeRequest,
+    AgentAnalyzeResponse,
     AnalyzeRequest,
     AnalyzeResponse,
     EvidenceItem,
@@ -13,20 +19,44 @@ from app.schemas import (
     RetrieveRequest,
     RetrieveResponse,
 )
-from app.services.gemini_service import GeminiService, PROMPT_VERSION
+from app.agent import ReviewAgent
+from app.services.llm_service import ReviewLLMService, build_llm_service
 from app.services.answer_presentation import OUTPUT_POLICY_VERSION
 from app.services.rag_service import RagService
+from app.services.topic_service import TopicService
 from app.logging_config import configure_logging
+from app.security import DemoUsageGuard
+from app.services.llm_telemetry import CURRENT_REQUEST_ID
 
 
+load_dotenv()
 configure_logging()
 logger = logging.getLogger(__name__)
 
 
+def _int_setting(name: str, default: int = 0) -> int:
+    try:
+        return max(0, int(os.getenv(name, str(default))))
+    except ValueError:
+        logger.warning("Invalid integer setting %s; using %s", name, default)
+        return default
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    app.state.demo_usage_guard = DemoUsageGuard(
+        requests_per_minute=_int_setting("ALADDIN_RATE_LIMIT_PER_MINUTE", 0),
+        generations_per_day=_int_setting("ALADDIN_MAX_GENERATIONS_PER_DAY", 0),
+    )
     app.state.rag_service = RagService()
-    app.state.gemini_service = GeminiService()
+    app.state.llm_service = build_llm_service()
+    app.state.gemini_service = app.state.llm_service
+    app.state.topic_service = TopicService()
+    app.state.review_agent = ReviewAgent(
+        app.state.rag_service,
+        app.state.llm_service,
+        app.state.topic_service,
+    )
 
     try:
         yield
@@ -46,14 +76,54 @@ app = FastAPI(
 async def log_request(request: Request, call_next):
     request_id = request.headers.get("X-Request-ID") or str(uuid4())
     request.state.request_id = request_id
+    request_id_token = CURRENT_REQUEST_ID.set(request_id)
     started = perf_counter()
     status_code = 500
     try:
+        if request.url.path.startswith("/api/v1/"):
+            expected_token = os.getenv("ALADDIN_API_TOKEN", "").strip()
+            supplied_token = request.headers.get("X-Aladdin-Token", "")
+            if expected_token and not hmac.compare_digest(
+                supplied_token,
+                expected_token,
+            ):
+                status_code = 401
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Invalid or missing API token"},
+                )
+
+            client_key = request.client.host if request.client else "unknown"
+            decision = request.app.state.demo_usage_guard.check_request(client_key)
+            if not decision.allowed:
+                status_code = 429
+                return JSONResponse(
+                    status_code=429,
+                    headers={"Retry-After": str(decision.retry_after_seconds)},
+                    content={"detail": "Demo request rate limit exceeded"},
+                )
+
+        if (
+            request.method == "POST"
+            and request.url.path in {
+                "/api/v1/analyze",
+                "/api/v1/agent/analyze",
+            }
+        ):
+            decision = request.app.state.demo_usage_guard.reserve_generation()
+            if not decision.allowed:
+                status_code = 429
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": "Daily Gemini generation limit reached"},
+                )
+
         response = await call_next(request)
         status_code = response.status_code
         response.headers["X-Request-ID"] = request_id
         return response
     finally:
+        CURRENT_REQUEST_ID.reset(request_id_token)
         logger.info(
             "request_completed",
             extra={
@@ -194,9 +264,10 @@ def analyze_reviews(
 
     evidence_text = "\n\n".join(evidence_blocks)
 
-    gemini_service: GeminiService = (
-        request.app.state.gemini_service
+    llm_service: ReviewLLMService = (
+        request.app.state.llm_service
     )
+    llm_service.reset_tracking()
 
     generation_start = perf_counter()
 
@@ -213,7 +284,7 @@ def analyze_reviews(
         generation_status = "skipped_no_evidence"
     else:
         try:
-            answer = gemini_service.generate_answer(
+            answer = llm_service.generate_answer(
                 query=request_body.query,
                 evidence_text=evidence_text,
                 request_id=request.state.request_id, attempts=attempts,
@@ -291,11 +362,15 @@ def analyze_reviews(
             "ranking_changes": [],
         },
         "generation": {
-            "provider": "Gemini",
-            "model": next((a["model"] for a in reversed(attempts) if a["status"] == "completed"), None),
+            "provider": llm_service.provider_name,
+            "model": (next((a["model"] for a in reversed(attempts) if a["status"] == "completed"), None)
+                      if llm_service.provider_name == "gemini" else
+                      (llm_service.last_model_name if generation_status == "completed" else None)),
             "attempts": attempts,
             "evidence_count": len(evidence),
-            "prompt_version": PROMPT_VERSION,
+            "prompt_id": llm_service.last_prompt_id,
+            "prompt_version": llm_service.last_prompt_version,
+            "usage": llm_service.last_usage,
             "output_policy_version": OUTPUT_POLICY_VERSION if generation_status == "completed" else None,
             "status": generation_status,
         },
@@ -315,4 +390,74 @@ def analyze_reviews(
         evidence=evidence,
         filters=filters,
         trace=trace,
+    )
+
+
+@app.post(
+    "/api/v1/agent/analyze",
+    response_model=AgentAnalyzeResponse,
+)
+def agent_analyze_reviews(
+    request_body: AgentAnalyzeRequest,
+    request: Request,
+) -> AgentAnalyzeResponse:
+    request_start = perf_counter()
+    request.app.state.llm_service.reset_tracking()
+    date_from = (
+        request_body.date_from.isoformat()
+        if request_body.date_from
+        else None
+    )
+    date_to = (
+        request_body.date_to.isoformat()
+        if request_body.date_to
+        else None
+    )
+    filters: dict[str, object] = {
+        "regions": request_body.selected_regions(),
+        "min_rating": request_body.min_rating,
+        "max_rating": request_body.max_rating,
+        "date_from": date_from,
+        "date_to": date_to,
+    }
+    state = request.app.state.review_agent.run(
+        query=request_body.query,
+        filters=filters,
+        evidence_limit=request_body.evidence_limit,
+    )
+    evidence = [
+        EvidenceItem(
+            review_id=item["review_id"],
+            region=item.get("region"),
+            rating=item.get("rating"),
+            review_date=item.get("review_date"),
+            text=item.get("text", ""),
+            rrf_score=item.get("score"),
+            reranker_score=None,
+        )
+        for item in state.evidence
+    ]
+    return AgentAnalyzeResponse(
+        query=state.query,
+        task=state.task,
+        answer=state.answer,
+        evidence=evidence,
+        analytics=state.analytics,
+        filters=state.filters,
+        steps=[step.__dict__ for step in state.plan],
+        trace={
+            "agent_version": "mvp-v1",
+            "tool_count": len(state.plan),
+            "provider": request.app.state.llm_service.provider_name,
+            "model": request.app.state.llm_service.last_model_name,
+            "prompt_id": request.app.state.llm_service.last_prompt_id,
+            "prompt_version": (
+                request.app.state.llm_service.last_prompt_version
+            ),
+            "usage": request.app.state.llm_service.last_usage,
+            "total_ms": round(
+                (perf_counter() - request_start) * 1000,
+                2,
+            ),
+        },
     )

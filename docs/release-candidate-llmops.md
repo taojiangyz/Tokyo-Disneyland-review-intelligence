@@ -1,6 +1,6 @@
 # LLMOps and answer-quality release candidate — 2026-10-04
 
-This update makes the multilingual review-analysis workflow measurable and easier to audit. It adds Gemini attempt tracing, usage/cost summaries, stricter regression checks, evidence-focused generation, and reversible exclusion of a confirmed out-of-domain review. It is a local release candidate, not a published release.
+This update makes the multilingual review-analysis workflow measurable and easier to audit. It adds Gemini attempt tracing, usage/cost summaries, stricter regression checks, evidence-focused generation, and reversible exclusion of a confirmed out-of-domain review. It is proposed in PR #8; it has not been merged into main.
 
 ## Delivered
 
@@ -33,6 +33,16 @@ python scripts/summarize_llm_usage.py
 
 ## Known limitations
 
-This is a RAG portfolio application, not an autonomous agent or production service. Evidence relevance varies with question wording; the original dining-price question still retrieves weak evidence. Some source comments mention guides without enough context to establish their domain. A ranking caveat cannot repair unsupported claims in the body, and fixed label localization does not guarantee whole-answer language quality. Fine-grained citation attribution, generated typos and unsupported causal wording still require review. Ranking detection is rule-based and may miss paraphrases.
+After integration with main, this portfolio application includes evidence RAG and a bounded tool-using Agent. It is not an unrestricted autonomous system or production service. Evidence relevance varies with question wording; the original dining-price question still retrieves weak evidence. Some source comments mention guides without enough context to establish their domain. A ranking caveat cannot repair unsupported claims in the body, and fixed label localization does not guarantee whole-answer language quality. Fine-grained citation attribution, generated typos and unsupported causal wording still require review. Ranking detection is rule-based and may miss paraphrases.
 
-The project has no authentication or multi-tenant isolation. Qdrant local mode is single-process. Final UI/Docker verification and fresh held-out human answer evaluation remain outstanding. The repository does not distribute private source reviews, so cloning alone does not reproduce the private-data results.
+Main supplies demo password/token checks and rate limits; enterprise authentication and multi-tenant isolation are not implemented. Qdrant local mode is single-process. Final UI/Docker verification and fresh held-out human answer evaluation remain outstanding. The repository does not distribute private source reviews, so cloning alone does not reproduce the private-data results.
+
+## Main integration — 2026-10-05
+
+Preserves main's Agent tools, optional function-calling planner, OpenAI-compatible provider, demo controls, CPU Docker setup and prompt registry. The review prompt is now `prompts/review_answer_v3.txt`, registry version `3.0.0`; Agent/planner templates retain their versions. Review presentation supports kana-bearing Japanese queries; kanji-only detection remains ambiguous.
+
+The presentation policy applies to review Q&A, not Agent analytical answers using aggregate statistics. Gemini text attempts, including Agent answer text, use the telemetry wrapper. Native function-call planning and OpenAI-compatible requests are not covered by its per-attempt cost ledger; existing provider traces remain available. Request IDs propagate into Gemini text logs, and tracking fields are isolated by execution context. Topic aggregation applies quarantine consistently with review statistics and retrieval.
+
+Historical live-model results predate integration and are not integrated results. No new live provider calls or Docker/browser validation occurred during conflict resolution.
+
+Integrated validation: 95 automated tests passed; structural Agent evaluation passed 40/40 with fixtures (not live LLM accuracy).

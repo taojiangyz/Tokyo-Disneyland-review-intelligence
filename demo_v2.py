@@ -1,4 +1,5 @@
 import base64
+import hmac
 import html
 import json
 import os
@@ -14,9 +15,13 @@ from app.services.llm_telemetry import generate_text, write_event
 from app.services.translation_parsing import parse_translation
 
 
+load_dotenv()
 API_BASE_URL = os.getenv("ALADDIN_API_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 API_URL = f"{API_BASE_URL}/api/v1/analyze"
+AGENT_API_URL = f"{API_BASE_URL}/api/v1/agent/analyze"
 METADATA_URL = f"{API_BASE_URL}/api/v1/metadata"
+API_TOKEN = os.getenv("ALADDIN_API_TOKEN", "").strip()
+API_HEADERS = {"X-Aladdin-Token": API_TOKEN} if API_TOKEN else {}
 HERO_IMAGE = Path("assets/tokyo_disney_ai_hero.png")
 
 COPY = {
@@ -24,6 +29,18 @@ COPY = {
         "subtitle": "Evidence-based customer review analysis for management decision support",
         "data_source": "Data source: verified ticket-purchaser reviews from Trip.com/Ctrip.com users in Mainland China, South Korea, and Hong Kong",
         "business_question": "Business Question",
+        "analysis_mode": "Analysis mode",
+        "rag_mode": "RAG Q&A",
+        "agent_mode": "Agent Analysis",
+        "agent_trace": "Agent execution trace",
+        "agent_task": "Selected task",
+        "agent_statistics": "Deterministic statistics",
+        "topic_insights": "AI-assisted topic insights",
+        "topic_coverage": "Topic labels cover {labeled:,} of {matching:,} matching reviews ({share:.1%}). Treat partial coverage as directional, not conclusive.",
+        "topic": "Topic",
+        "review_share": "Review share",
+        "sentiment_distribution": "Sentiment distribution",
+        "topics_unavailable": "Topic labels are not available for this analysis yet.",
         "example_questions": "Example questions",
         "example_help": "Choose an example or edit the question below.",
         "ask": "Ask any question about the customer reviews",
@@ -69,6 +86,18 @@ COPY = {
         "subtitle": "経営判断を支援する、根拠に基づいたカスタマーレビュー分析",
         "data_source": "データ出典：Trip.com/Ctrip.com の中国本土・韓国・香港の実購入者レビュー",
         "business_question": "分析したい質問",
+        "analysis_mode": "分析モード",
+        "rag_mode": "RAG Q&A",
+        "agent_mode": "Agent分析",
+        "agent_trace": "Agent実行トレース",
+        "agent_task": "選択されたTask",
+        "agent_statistics": "決定論的な統計",
+        "topic_insights": "AI支援トピック分析",
+        "topic_coverage": "該当レビュー{matching:,}件のうち{labeled:,}件にトピックラベルがあります（{share:.1%}）。一部のみの場合は参考傾向であり、最終結論ではありません。",
+        "topic": "トピック",
+        "review_share": "レビュー比率",
+        "sentiment_distribution": "感情分布",
+        "topics_unavailable": "この分析で利用できるトピックラベルはまだありません。",
         "example_questions": "質問例",
         "example_help": "質問例を選ぶか、下の入力欄で自由に編集してください。",
         "ask": "カスタマーレビューについて自由に質問してください",
@@ -155,7 +184,7 @@ def format_stars(rating: object) -> str:
 
 @st.cache_data(ttl=300, show_spinner=False)
 def load_metadata() -> dict:
-    response = requests.get(METADATA_URL, timeout=10)
+    response = requests.get(METADATA_URL, headers=API_HEADERS, timeout=10)
     response.raise_for_status()
     return response.json()
 
@@ -237,6 +266,26 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
+
+
+def require_demo_password() -> None:
+    expected = os.getenv("ALADDIN_DEMO_PASSWORD", "").strip()
+    if not expected or st.session_state.get("demo_authenticated"):
+        return
+
+    st.title("Tokyo Disney Review Intelligence")
+    st.caption("Controlled interview demonstration / 面接用デモ")
+    supplied = st.text_input("Demo password", type="password")
+    if st.button("Open demo", type="primary"):
+        if hmac.compare_digest(supplied, expected):
+            st.session_state.demo_authenticated = True
+            st.rerun()
+        else:
+            st.error("Incorrect password.")
+    st.stop()
+
+
+require_demo_password()
 
 
 # -----------------------------
@@ -524,6 +573,18 @@ for item in metadata["markets"]:
 with st.container(border=True):
     st.subheader(t["business_question"])
 
+    analysis_mode = st.radio(
+        t["analysis_mode"],
+        options=[t["rag_mode"], t["agent_mode"]],
+        horizontal=True,
+        help=(
+            "RAG answers a focused question. Agent Analysis selects and "
+            "executes retrieval, statistics, verification, and generation tools."
+            if language == "English"
+            else "RAGは単一質問に回答し、Agent分析は検索・統計・検証・生成Toolを選択して実行します。"
+        ),
+    )
+
     selected_example = st.selectbox(
         t["example_questions"],
         options=EXAMPLE_QUESTIONS[language],
@@ -626,6 +687,16 @@ if analyze_clicked:
         "date_to": date_to,
         "top_k": evidence_count,
     }
+    request_url = API_URL
+    if analysis_mode == t["agent_mode"]:
+        payload["evidence_limit"] = payload.pop("top_k")
+        if rating_range == (
+            int(metadata["min_rating"]),
+            int(metadata["max_rating"]),
+        ):
+            payload["min_rating"] = None
+            payload["max_rating"] = None
+        request_url = AGENT_API_URL
 
     interaction_id = str(uuid4())
     interaction_start = perf_counter()
@@ -634,9 +705,9 @@ if analyze_clicked:
             t["analyzing"]
         ):
             response = requests.post(
-                API_URL,
+                request_url,
                 json=payload,
-                headers={"X-Request-ID": interaction_id},
+                headers={**API_HEADERS, "X-Request-ID": interaction_id},
                 timeout=180,
             )
 
@@ -659,6 +730,103 @@ if analyze_clicked:
 
         evidence = result.get("evidence", [])
         applied_filters = result.get("filters", {})
+
+        if analysis_mode == t["agent_mode"]:
+            with st.container(border=True):
+                st.subheader(t["agent_trace"])
+                st.caption(
+                    f"{t['agent_task']}: {result.get('task', 'unknown')}"
+                )
+                steps = result.get("steps", [])
+                if steps:
+                    st.dataframe(
+                        [
+                            {
+                                "Step": index,
+                                "Tool": step.get("tool"),
+                                "Status": step.get("status"),
+                                "Summary": step.get("summary"),
+                                "ms": step.get("duration_ms"),
+                            }
+                            for index, step in enumerate(steps, start=1)
+                        ],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                statistics = result.get("analytics", {}).get("statistics")
+                if statistics:
+                    with st.expander(t["agent_statistics"]):
+                        st.json(statistics)
+
+                analytics = result.get("analytics", {})
+                topic_result = analytics.get("topic_distribution")
+                market_topics = analytics.get("topics_by_market")
+                if topic_result or market_topics:
+                    with st.container(border=True):
+                        st.subheader(t["topic_insights"])
+                        if topic_result and topic_result.get("available"):
+                            labeled = int(topic_result.get("review_count", 0))
+                            matching = int(
+                                (statistics or {}).get("review_count", labeled)
+                            )
+                            share = labeled / matching if matching else 0
+                            st.caption(
+                                t["topic_coverage"].format(
+                                    labeled=labeled,
+                                    matching=matching,
+                                    share=share,
+                                )
+                            )
+                            topic_rows = topic_result.get("topics", [])
+                            if topic_rows:
+                                st.bar_chart(
+                                    topic_rows,
+                                    x="topic",
+                                    y="review_share",
+                                    horizontal=True,
+                                )
+                                st.dataframe(
+                                    [
+                                        {
+                                            t["topic"]: row.get("topic"),
+                                            "Count": row.get("count"),
+                                            t["review_share"]: (
+                                                f"{float(row.get('review_share', 0)):.1%}"
+                                            ),
+                                        }
+                                        for row in topic_rows
+                                    ],
+                                    use_container_width=True,
+                                    hide_index=True,
+                                )
+                            sentiments = topic_result.get("sentiments", {})
+                            if sentiments:
+                                st.caption(t["sentiment_distribution"])
+                                st.json(sentiments)
+                        elif market_topics and market_topics.get("available"):
+                            market_rows = []
+                            for market, market_data in market_topics.get(
+                                "markets", {}
+                            ).items():
+                                for row in market_data.get("topics", []):
+                                    market_rows.append(
+                                        {
+                                            t["market"]: market,
+                                            t["topic"]: row.get("topic"),
+                                            "Count": row.get("count"),
+                                            t["review_share"]: (
+                                                f"{float(row.get('review_share', 0)):.1%}"
+                                            ),
+                                        }
+                                    )
+                            if market_rows:
+                                st.dataframe(
+                                    market_rows,
+                                    use_container_width=True,
+                                    hide_index=True,
+                                )
+                        else:
+                            st.info(t["topics_unavailable"])
 
         with st.spinner(
             t["translating"]
@@ -701,10 +869,16 @@ if analyze_clicked:
                 applied_markets = applied_filters.get("regions") or [
                     t["all_markets"]
                 ]
+                applied_min_rating = applied_filters.get("min_rating")
+                applied_max_rating = applied_filters.get("max_rating")
+                applied_rating = (
+                    f"{applied_min_rating or t['all']}–"
+                    f"{applied_max_rating or t['all']}"
+                )
                 st.caption(
                     f"{t['applied_filters']} — "
                     f"{t['markets']}: {', '.join(applied_markets)} · "
-                    f"{t['rating']}: {rating_range[0]}–{rating_range[1]} · "
+                    f"{t['rating']}: {applied_rating} · "
                     f"{t['dates']}: {date_from or t['all']} — {date_to or t['all']}"
                 )
 
@@ -798,15 +972,15 @@ if analyze_clicked:
 
             tech_copy = {
                 "English": [
-                    ("Hybrid Retrieval", "Dense and sparse retrieval combined with RRF"),
-                    ("Reranking", "BGE cross-encoder reranker"),
-                    ("Language Model", "Gemini evidence-based answer generation"),
+                    ("Retrieval", "Evaluation-selected BGE-M3 Dense retrieval"),
+                    ("Agent Tools", "Statistics, search, and evidence verification"),
+                    ("Language Model", "Gemini grounded explanation and fallback"),
                     ("Vector Database", "Qdrant review storage and metadata filtering"),
                 ],
                 "日本語": [
-                    ("ハイブリッド検索", "Dense検索とSparse検索をRRFで統合"),
-                    ("リランキング", "BGEクロスエンコーダーで関連度を再評価"),
-                    ("言語モデル", "Geminiによる根拠ベースの回答生成"),
+                    ("検索", "評価で選定したBGE-M3 Dense検索"),
+                    ("Agent Tool", "統計・検索・Evidence検証"),
+                    ("言語モデル", "Geminiによる根拠説明とFallback"),
                     ("ベクトルDB", "Qdrantによるレビュー保存とメタデータ絞り込み"),
                 ],
             }

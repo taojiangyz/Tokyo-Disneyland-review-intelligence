@@ -1,4 +1,5 @@
 """Content-free telemetry for each application-level Gemini attempt."""
+from contextvars import ContextVar
 import json
 import logging
 import os
@@ -9,6 +10,7 @@ from time import perf_counter
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
+CURRENT_REQUEST_ID = ContextVar('llm_request_id', default=None)
 FIELDS = ('prompt_token_count', 'candidates_token_count', 'thoughts_token_count',
           'cached_content_token_count', 'total_token_count')
 
@@ -76,7 +78,7 @@ def generate_text(client, models, prompt, *, request_id=None, operation='answer'
                   prompt_version='v1', attempts=None, validator=None):
     """Return text; append request-local attempt evidence even when all models fail."""
     attempts = attempts if attempts is not None else []
-    request_id = request_id or str(uuid4())
+    request_id = request_id or CURRENT_REQUEST_ID.get() or str(uuid4())
     last_error = None
     for index, model in enumerate(dict.fromkeys(models), 1):
         start = perf_counter()

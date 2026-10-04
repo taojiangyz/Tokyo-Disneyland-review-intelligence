@@ -27,3 +27,13 @@ def test_nonranking_questions_do_not_get_ranking_notice(query):
 
 def test_empty_output_stays_empty():
     assert present_answer('最常见？', '') == ''
+
+
+def test_japanese_question_retains_japanese_presentation():
+    from app.services.answer_presentation import answer_language
+    query = '一番多い不満は何ですか？'
+    assert answer_language(query) == 'Japanese'
+    answer = present_answer(query, '待ち時間です [123456789]。')
+    assert answer.startswith('以下は検索されたレビュー')
+    assert '根拠の範囲：' in answer
+    assert present_answer(query, answer) == answer

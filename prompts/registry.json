@@ -1,0 +1,14 @@
+{
+  "review_answer": {
+    "version": "3.0.0",
+    "file": "review_answer_v3.txt"
+  },
+  "agent_answer": {
+    "version": "1.0.0",
+    "file": "agent_answer_v1.txt"
+  },
+  "tool_planner": {
+    "version": "1.0.0",
+    "file": "tool_planner_v1.txt"
+  }
+}

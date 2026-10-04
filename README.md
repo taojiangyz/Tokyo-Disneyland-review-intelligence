@@ -6,16 +6,18 @@ Aladdin is an evidence-grounded, multilingual review analysis assistant for Toky
 
 ## Product demo
 
-![Tokyo Disney Review Intelligence demo](assets/demo/tokyo_disney_review_intelligence_demo.gif)
+![Tokyo Disney Review Intelligence Agent demo](assets/demo/tokyo_disney_agent_demo.gif)
 
-The accelerated demo shows Japanese UI switching, an open-ended management question, dynamic filters, evidence-grounded generation, and expandable source reviews.
+The demo shows a Japanese market-comparison question, automatic Agent routing and filtering, an auditable tool trace, full-dataset topic analytics, grounded generation, and expandable source reviews.
 
 The project demonstrates an end-to-end applied AI workflow: reproducible data ingestion, evaluation-selected dense retrieval, experimental hybrid/reranker modes, grounded generation, regression evaluation, observability, and a business-facing UI.
 
 ## What it can do
 
-- Answer free-form questions in English or Chinese instead of relying on predefined prompts.
-- Filter 2,048 eligible reviews by market, date and rating; all 2,049 source records remain indexed, including one quarantined record.
+- Answer free-form questions in English, Japanese, or Chinese instead of relying on predefined prompts.
+- Filter 2,048 eligible reviews by market, date and rating; all 2,049 source records remain indexed, including one quarantined record. Topic statistics apply the same quarantine rules to the available derived labels.
+- Route questions into evidence Q&A, root-cause analysis, market comparison, or improvement planning.
+- Calculate market/topic/sentiment statistics from eligible AI-assisted labels (2,049 original labels retained) rather than asking Gemini to estimate counts.
 - Use BGE-M3 Dense Top 5 in the interactive path, selected through human-labeled evaluation.
 - Retain sparse/RRF and `BAAI/bge-reranker-v2-m3` modes for reproducible offline comparison.
 - Generate evidence-based answers with review ID citations.
@@ -27,17 +29,34 @@ The project demonstrates an end-to-end applied AI workflow: reproducible data in
 
 ```mermaid
 flowchart LR
-    A["Raw multilingual reviews"] --> B["Validation and normalization"]
-    B --> C["BGE-M3 dense and sparse embeddings"]
-    C --> D["Local Qdrant index"]
-    U["Manager question and filters"] --> API["FastAPI analysis service"]
-    API --> D
-    D --> DR["Evaluated Dense Top 5 retrieval"]
-    DR --> G["Gemini grounded generation"]
-    G --> UI["Streamlit evidence UI"]
-    DR --> UI
-    D -. "offline evaluation" .-> EXP["Sparse + RRF + reranker modes"]
-    API --> T["Trace and timing metadata"]
+    subgraph OFF["Offline data pipeline"]
+        A["Raw multilingual reviews"] --> B["Validation and normalization"]
+        B --> C["BGE-M3 embeddings"]
+        C --> D["Local Qdrant index"]
+        B --> L["Gemini topic pre-labeling"]
+        L --> TS["Private topic label store"]
+    end
+
+    subgraph ON["Online Agent analysis"]
+        U["Manager question and optional filters"] --> UI["Streamlit UI"]
+        UI --> API["FastAPI"]
+        API --> AG["Agent router and bounded plan"]
+        AG --> ST["Deterministic statistics"]
+        AG --> TP["Topic analytics"]
+        AG --> RT["Dense Top 5 retrieval"]
+        ST --> TS
+        TP --> TS
+        RT --> D
+        RT --> EV["Evidence verification"]
+        ST --> G["Gemini grounded generation"]
+        TP --> G
+        EV --> G
+        G --> R["Answer, evidence, trace and timings"]
+        R --> API
+        API --> UI
+    end
+
+    D -. "offline evaluation only" .-> EXP["Hybrid RRF and reranker comparison"]
 ```
 
 See [docs/architecture.md](docs/architecture.md) for component responsibilities, failure behavior, and design decisions.
@@ -54,6 +73,8 @@ The indexed dataset currently contains:
 | **Total** | **2,049** |
 
 Review dates range from 2023-06-07 to 2026-02-11. Ratings range from 1 to 5. To respect reviewer privacy and source-platform redistribution restrictions, raw review text, usernames, generated candidate pools, translations, and the Qdrant database are not included in this public repository. The aggregate counts and human-verified relevance grades are retained for reproducibility of the documented evaluation methodology.
+
+Data source: reviews from verified ticket purchasers in Mainland China, South Korea, and Hong Kong, collected from Trip.com/Ctrip.com.
 
 ## Quick start
 
@@ -102,6 +123,18 @@ docker compose up --build
 
 The API owns the embedded Qdrant directory; the UI reaches it through the internal Compose network. The first start can take several minutes while embedding and reranker models are downloaded into the shared model cache.
 
+### Controlled interview demo
+
+The optional `interview` Compose profile adds a temporary Cloudflare Quick Tunnel while keeping the API bound to localhost. Set a strong `ALADDIN_DEMO_PASSWORD`, a separate `ALADDIN_API_TOKEN`, and the request/generation limits in `.env`, then run:
+
+```bash
+make demo-up
+# after the interview
+make demo-down
+```
+
+The temporary `trycloudflare.com` URL appears in the tunnel logs and stops working when the profile is shut down. This is controlled external access to a locally running application, not a permanent cloud deployment. See [docs/interview-demo.md](docs/interview-demo.md) for the safety checklist and external-network test.
+
 ## API
 
 `GET /api/v1/metadata` returns data-driven filter options and counts.
@@ -146,6 +179,25 @@ make rebuild-index
 
 The pipeline checks JSON validity, required IDs/text, duplicate IDs, rating bounds, locale mapping, and ISO dates. Point IDs are deterministic UUIDs, so the same review receives the same Qdrant identity on every rebuild.
 
+### AI-assisted topic labels
+
+The project includes a versioned, multilingual topic taxonomy and a resumable Gemini pre-labeling pipeline. It assigns multiple topics, overall sentiment, and a confidence score to each review, then lets the Agent calculate topic distributions by market, rating, and date.
+
+```bash
+# Start with a small, inexpensive sample
+python scripts/build_topic_labels.py --limit 40 --batch-size 20
+
+# Representative QA sample across markets and low/high ratings
+python scripts/build_topic_labels.py --limit 60 --sample-strategy balanced
+
+# Resume later; completed review IDs are skipped automatically
+make topic-labels
+```
+
+`data/topic_labels.jsonl` is private derived data and is excluded from Git together with the review text. AI-assisted labels are not ground truth: production use requires sampling, human correction, taxonomy versioning, and quality measurement before business decisions are automated.
+
+The completed v1.1 run labeled all 2,049 reviews. A 90-item human audit intentionally oversampled low-confidence outputs and rating/sentiment tensions: 81 items were verified and 9 skipped. Against the verified items, topic exact match was **93.8%**, multilabel micro-F1 was **98.2%**, and sentiment accuracy was **91.4%**. These are audit-sample results, not estimates from a simple random sample; low-support per-topic results should not be generalized. Recalculate locally with `make evaluate-topic-labels`.
+
 ## Tests and regression suite
 
 Run unit tests:
@@ -170,6 +222,96 @@ make regression
 
 Full runs call the configured Gemini model and may incur cost. Reports are written to `evals/results/latest.json` and are intentionally excluded from Git.
 
+The separate Agent suite contains **40 English, Japanese, and Chinese questions** covering task routing, market inference, complaint/low-rating intent, explicit-filter precedence, bounded tool plans, deterministic statistics, citation containment, no-evidence behavior, and provider-failure contracts. Structural evaluation is free and does not call Gemini:
+
+```bash
+make agent-eval
+```
+
+When the application is already running through Docker Compose, run the same
+structural suite inside the API container with:
+
+```bash
+docker compose exec api python -m scripts.run_agent_evaluation
+```
+
+Run the same assertions end to end against the local Agent API only when desired:
+
+```bash
+make agent-eval-live
+```
+
+For an inexpensive but representative live check, use the curated smoke suite.
+It covers evidence Q&A, root-cause analysis, market comparison, improvement
+planning, and no-evidence abstention instead of simply taking the first five
+cases:
+
+```bash
+python -m scripts.run_agent_evaluation --live --smoke \
+  --output evals/results/agent_gemini_smoke.json
+```
+
+Docker Compose equivalent:
+
+```bash
+docker compose exec api python -m scripts.run_agent_evaluation \
+  --live --base-url http://127.0.0.1:8000
+```
+
+The live run can call Gemini and is protected by the configured daily generation limit. Provider-failure behavior is tested with deterministic fakes in the unit suite rather than deliberately causing an external outage.
+
+Evaluation reports include overall and per-category pass rates. Live reports
+also aggregate prompt/completion/total tokens, mean/P50/P95 end-to-end latency,
+and failed-case attribution across prompt, retrieval, model, data, and
+orchestration layers. This makes regressions diagnosable instead of reducing
+the result to one pass count.
+
+Validated on 2026-09-16:
+
+| Agent evaluation | Result | Scope |
+|---|---:|---|
+| Structural suite | **40/40 passed** | Routing, inferred markets, filter precedence, and tool plans; no Gemini calls |
+| Curated Docker Live smoke test | **5/5 passed** | All four Agent tasks plus no-evidence abstention; retrieval, deterministic analytics, Gemini generation, and citation containment |
+
+The five-case live run is deliberately reported as a smoke test, not as a claim that all 40 cases were executed end to end. This keeps provider cost and demo-rate limits controlled while preserving a reproducible full-suite command.
+
+The latest instrumented Gemini smoke run used prompt `agent_answer` version
+`1.0.0` and `gemini-3.5-flash-lite`. It consumed **8,547 tokens** across five
+requests (one no-evidence case correctly skipped generation), with **3.04 s
+mean**, **3.39 s P50**, and **4.11 s P95** end-to-end latency. Tool timing
+showed that grounded generation averaged **2.61 s** across all five cases
+(about **3.26 s** over the four generated answers), while retrieval averaged
+**0.40 s** and deterministic statistics remained below **0.09 s**. No prompt,
+retrieval, model, data, or orchestration failures were recorded.
+
+### Versioned prompts
+
+Generation prompts live under [`prompts/`](prompts/) and are selected through
+`prompts/registry.json`. Every response trace records the prompt ID and semantic
+version, so prompt changes can be reviewed and compared against the fixed eval
+sets instead of being tuned invisibly inside Python code.
+
+### Bounded native function calling
+
+The default deterministic router remains the low-cost, reproducible path. Set
+`ALADDIN_LLM_PLANNER_ENABLED=true` to let Gemini submit one native
+`submit_agent_plan` function call before execution. The returned plan is parsed
+through strict Pydantic contracts: only six registered tools are allowed,
+arguments reject unknown fields, evidence limits are bounded, the workflow is
+limited to six steps, and retrieval must be followed by evidence verification
+before generation. Invalid calls automatically fall back to the deterministic
+router and expose the fallback reason in `analytics.planning`.
+
+### Provider portability
+
+Set `ALADDIN_LLM_PROVIDER=gemini` for the default provider or
+`ALADDIN_LLM_PROVIDER=openai_compatible` for an Ollama, vLLM, or internal
+OpenAI-compatible endpoint. Retrieval, tool contracts, prompts, and evaluation
+remain unchanged. Response traces include provider, actual model, prompt
+version, and reported token usage. See the
+[model migration guide](docs/model-migration.md) for configuration and parity
+evaluation commands.
+
 Generate a pooled relevance-labeling file and compare all retrieval modes:
 
 ```bash
@@ -185,11 +327,11 @@ The internal benchmark contains 241 unique candidates across 15 questions. Candi
 
 ### Human-verified retrieval results
 
-The production endpoint uses **Dense Top 5**, selected from the same 241 human judgments because it achieved the best Recall@5 and nDCG@5 while remaining interactive.
+The interactive endpoint uses **Dense Top 5**, selected from the same 241 human judgments because it achieved the best Recall@5 and nDCG@5 while remaining responsive.
 
 | Retrieval mode | Recall@5 | nDCG@5 | Mean latency |
 |---|---:|---:|---:|
-| **Dense (production default)** | **0.365** | **0.772** | **387 ms** |
+| **Dense (interactive default)** | **0.365** | **0.772** | **387 ms** |
 | Hybrid RRF | 0.314 | 0.707 | 243 ms |
 | Hybrid + reranker (10 candidates) | 0.344 | 0.758 | 3,467 ms |
 | Hybrid + reranker (20 candidates) | 0.335 | 0.744 | 6,834 ms |
@@ -213,6 +355,50 @@ At Top 5, dense retrieval had the strongest recall and ranking quality. At Top 1
 - **Graceful degradation:** if Gemini is unavailable, the API returns a clear degraded status and still displays retrieved customer evidence instead of failing the whole workflow.
 - **Model fallback:** if the primary Gemini model is temporarily overloaded, answer generation and evidence translation retry with the configured fallback model.
 - **Measured trade-offs:** retrieval choices are justified using human labels rather than a purely qualitative demo.
+
+## Review Intelligence Agent
+
+The evaluated RAG system now includes a bounded, tool-using analytics Agent
+while keeping `/api/v1/analyze` compatible.
+
+The Agent endpoint is:
+
+```http
+POST /api/v1/agent/analyze
+```
+
+It routes a request into one of four auditable task types:
+
+- evidence-grounded Q&A;
+- complaint root-cause analysis;
+- market comparison;
+- improvement-priority planning.
+
+The Agent can call deterministic review statistics, full-dataset topic
+distribution and market-comparison tools, evaluated Dense retrieval, evidence
+verification, and grounded generation. Its response includes the
+selected task, filters, tool outputs, evidence, execution steps, timing, and
+final answer. Counts and averages are calculated in code; Gemini is not allowed
+to invent quantitative findings. Root-cause and improvement tasks default to
+reviews rated 1–3 unless the caller supplies a rating range.
+
+Example:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/agent/analyze \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "query": "Compare queue complaints from Korean and Hong Kong visitors",
+    "regions": ["KR", "HK"],
+    "evidence_limit": 5
+  }'
+```
+
+The Agent automatically infers referenced markets and complaint/low-rating
+intent from English, Japanese, and Chinese questions when explicit UI filters
+are absent. Plans remain intentionally bounded and auditable rather than an
+open-ended autonomous loop. Conversation memory, replanning, and broader Agent
+task-completion evaluation remain future milestones.
 
 See [docs/portfolio-case-study.md](docs/portfolio-case-study.md) for the interview narrative and [docs/demo-script.md](docs/demo-script.md) for a short recording script.
 
@@ -251,9 +437,9 @@ Normal regression cases now require completed generation, so a degraded response
 cannot silently pass answer checks. Citation-ID checks still do not establish
 semantic faithfulness. See [LLMOps scope, configuration and validation](docs/llmops.md).
 
-## Latest local release candidate
+## LLMOps release candidate
 
-See [delivered features, validation and limitations](docs/release-candidate-llmops.md). The final presentation-policy change passed 39 tests and offline replay of 26 saved answers. The preceding live API run passed structural checks on 26 development cases; this is not a semantic accuracy score.
+Main integration passed 95 automated tests and 40/40 fixture-based Agent structural cases. See [delivered features, validation and limitations](docs/release-candidate-llmops.md). The final presentation-policy change passed 39 tests and offline replay of 26 saved answers. The preceding live API run passed structural checks on 26 development cases; this is not a semantic accuracy score.
 
 ## Current limitations
 
@@ -261,7 +447,7 @@ See [delivered features, validation and limitations](docs/release-candidate-llmo
 - User-facing answer translation is generated on demand; annotation translations are cached locally to avoid repeated Gemini usage.
 - Evidence sufficiency is prompt-guided; a calibrated reranker threshold is planned.
 - The retrieval benchmark covers 15 existing questions, initially 241 human judgments and now a separate 257-label snapshot. Broader coverage and held-out validation are still needed.
-- The application has no authentication or multi-tenant isolation yet.
+- Interview-demo password/token checks and rate limits are supported; these are not enterprise authentication or multi-tenant isolation.
 
 ## Roadmap
 

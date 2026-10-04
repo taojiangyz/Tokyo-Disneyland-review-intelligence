@@ -107,9 +107,12 @@ def test_request_trace_is_local_and_no_evidence_skips_llm(monkeypatch):
     from app.main import app
     rag = SimpleNamespace(retrieve_for_evaluation=lambda **kwargs: (
         [], {'hybrid_candidate_count': 0, 'final_selected_count': 0, 'timing_ms': {}}))
-    gemini = Mock()
+    from app.security import DemoUsageGuard
+    monkeypatch.setenv('ALADDIN_API_TOKEN', '')
+    monkeypatch.setattr(app.state, 'demo_usage_guard', DemoUsageGuard(), raising=False)
+    gemini = Mock(provider_name='gemini', last_prompt_id=None, last_prompt_version=None, last_usage={})
     monkeypatch.setattr(app.state, 'rag_service', rag, raising=False)
-    monkeypatch.setattr(app.state, 'gemini_service', gemini, raising=False)
+    monkeypatch.setattr(app.state, 'llm_service', gemini, raising=False)
     client = TestClient(app)  # No lifespan: no model loads, no external requests.
     result = client.post('/api/v1/analyze', json={'query': 'nothing here'}, headers={'X-Request-ID': 'isolated'})
     assert result.status_code == 200
@@ -123,8 +126,8 @@ def test_request_trace_is_local_and_no_evidence_skips_llm(monkeypatch):
 
 def test_grouped_citations_accept_valid_ids_and_reject_unknown_ids():
     case = {'expect': {'min_evidence': 1}}
-    data = {'evidence': [{'review_id': 'a'}, {'review_id': 'b'}],
-            'answer': 'Finding [a, b].', 'trace': {'generation': {'status': 'completed'}}}
+    data = {'evidence': [{'review_id': '111111111'}, {'review_id': '222222222'}],
+            'answer': 'Finding [111111111, 222222222].', 'trace': {'generation': {'status': 'completed'}}}
     assert not evaluate_response(case, data)
-    data['answer'] = 'Finding [a, fabricated].'
-    assert 'answer cites review IDs outside retrieved evidence' in evaluate_response(case, data)
+    data['answer'] = 'Finding [111111111, 999999999].'
+    assert any('answer cites review IDs outside retrieved evidence' in error for error in evaluate_response(case, data))
