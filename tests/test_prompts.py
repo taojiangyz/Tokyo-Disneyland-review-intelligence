@@ -9,7 +9,7 @@ def test_registry_loads_versioned_agent_prompt() -> None:
     registry = PromptRegistry()
     prompt = registry.get("agent_answer")
 
-    assert prompt.version == "1.0.0"
+    assert prompt.version == "2.0.0"
     assert "{{analytics_json}}" in prompt.text
 
 
