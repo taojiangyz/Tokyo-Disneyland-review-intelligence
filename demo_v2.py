@@ -17,7 +17,6 @@ from app.services.translation_parsing import parse_translation
 
 load_dotenv()
 API_BASE_URL = os.getenv("ALADDIN_API_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
-API_URL = f"{API_BASE_URL}/api/v1/analyze"
 AGENT_API_URL = f"{API_BASE_URL}/api/v1/agent/analyze"
 METADATA_URL = f"{API_BASE_URL}/api/v1/metadata"
 API_TOKEN = os.getenv("ALADDIN_API_TOKEN", "").strip()
@@ -29,9 +28,6 @@ COPY = {
         "subtitle": "Evidence-based customer review analysis for management decision support",
         "data_source": "Data source: verified ticket-purchaser reviews from Trip.com/Ctrip.com users in Mainland China, South Korea, and Hong Kong",
         "business_question": "Business Question",
-        "analysis_mode": "Analysis mode",
-        "rag_mode": "RAG Q&A",
-        "agent_mode": "Agent Analysis",
         "agent_trace": "Agent execution trace",
         "agent_task": "Selected task",
         "agent_statistics": "Deterministic statistics",
@@ -86,9 +82,6 @@ COPY = {
         "subtitle": "経営判断を支援する、根拠に基づいたカスタマーレビュー分析",
         "data_source": "データ出典：Trip.com/Ctrip.com の中国本土・韓国・香港の実購入者レビュー",
         "business_question": "分析したい質問",
-        "analysis_mode": "分析モード",
-        "rag_mode": "RAG Q&A",
-        "agent_mode": "Agent分析",
         "agent_trace": "Agent実行トレース",
         "agent_task": "選択されたTask",
         "agent_statistics": "決定論的な統計",
@@ -573,16 +566,10 @@ for item in metadata["markets"]:
 with st.container(border=True):
     st.subheader(t["business_question"])
 
-    analysis_mode = st.radio(
-        t["analysis_mode"],
-        options=[t["rag_mode"], t["agent_mode"]],
-        horizontal=True,
-        help=(
-            "RAG answers a focused question. Agent Analysis selects and "
-            "executes retrieval, statistics, verification, and generation tools."
-            if language == "English"
-            else "RAGは単一質問に回答し、Agent分析は検索・統計・検証・生成Toolを選択して実行します。"
-        ),
+    st.caption(
+        "Automatically selects review Q&A, market comparison, or analysis tools."
+        if language == "English"
+        else "質問に応じて、レビュー検索・市場比較・分析を自動で選択します。"
     )
 
     selected_example = st.selectbox(
@@ -687,16 +674,14 @@ if analyze_clicked:
         "date_to": date_to,
         "top_k": evidence_count,
     }
-    request_url = API_URL
-    if analysis_mode == t["agent_mode"]:
-        payload["evidence_limit"] = payload.pop("top_k")
-        if rating_range == (
-            int(metadata["min_rating"]),
-            int(metadata["max_rating"]),
-        ):
-            payload["min_rating"] = None
-            payload["max_rating"] = None
-        request_url = AGENT_API_URL
+    payload["evidence_limit"] = payload.pop("top_k")
+    if rating_range == (
+        int(metadata["min_rating"]),
+        int(metadata["max_rating"]),
+    ):
+        payload["min_rating"] = None
+        payload["max_rating"] = None
+    request_url = AGENT_API_URL
 
     interaction_id = str(uuid4())
     interaction_start = perf_counter()
@@ -731,102 +716,101 @@ if analyze_clicked:
         evidence = result.get("evidence", [])
         applied_filters = result.get("filters", {})
 
-        if analysis_mode == t["agent_mode"]:
-            with st.container(border=True):
-                st.subheader(t["agent_trace"])
-                st.caption(
-                    f"{t['agent_task']}: {result.get('task', 'unknown')}"
+        with st.container(border=True):
+            st.subheader(t["agent_trace"])
+            st.caption(
+                f"{t['agent_task']}: {result.get('task', 'unknown')}"
+            )
+            steps = result.get("steps", [])
+            if steps:
+                st.dataframe(
+                    [
+                        {
+                            "Step": index,
+                            "Tool": step.get("tool"),
+                            "Status": step.get("status"),
+                            "Summary": step.get("summary"),
+                            "ms": step.get("duration_ms"),
+                        }
+                        for index, step in enumerate(steps, start=1)
+                    ],
+                    use_container_width=True,
+                    hide_index=True,
                 )
-                steps = result.get("steps", [])
-                if steps:
-                    st.dataframe(
-                        [
-                            {
-                                "Step": index,
-                                "Tool": step.get("tool"),
-                                "Status": step.get("status"),
-                                "Summary": step.get("summary"),
-                                "ms": step.get("duration_ms"),
-                            }
-                            for index, step in enumerate(steps, start=1)
-                        ],
-                        use_container_width=True,
-                        hide_index=True,
-                    )
-                statistics = result.get("analytics", {}).get("statistics")
-                if statistics:
-                    with st.expander(t["agent_statistics"]):
-                        st.json(statistics)
+            statistics = result.get("analytics", {}).get("statistics")
+            if statistics:
+                with st.expander(t["agent_statistics"]):
+                    st.json(statistics)
 
-                analytics = result.get("analytics", {})
-                topic_result = analytics.get("topic_distribution")
-                market_topics = analytics.get("topics_by_market")
-                if topic_result or market_topics:
-                    with st.container(border=True):
-                        st.subheader(t["topic_insights"])
-                        if topic_result and topic_result.get("available"):
-                            labeled = int(topic_result.get("review_count", 0))
-                            matching = int(
-                                (statistics or {}).get("review_count", labeled)
+            analytics = result.get("analytics", {})
+            topic_result = analytics.get("topic_distribution")
+            market_topics = analytics.get("topics_by_market")
+            if topic_result or market_topics:
+                with st.container(border=True):
+                    st.subheader(t["topic_insights"])
+                    if topic_result and topic_result.get("available"):
+                        labeled = int(topic_result.get("review_count", 0))
+                        matching = int(
+                            (statistics or {}).get("review_count", labeled)
+                        )
+                        share = labeled / matching if matching else 0
+                        st.caption(
+                            t["topic_coverage"].format(
+                                labeled=labeled,
+                                matching=matching,
+                                share=share,
                             )
-                            share = labeled / matching if matching else 0
-                            st.caption(
-                                t["topic_coverage"].format(
-                                    labeled=labeled,
-                                    matching=matching,
-                                    share=share,
-                                )
+                        )
+                        topic_rows = topic_result.get("topics", [])
+                        if topic_rows:
+                            st.bar_chart(
+                                topic_rows,
+                                x="topic",
+                                y="review_share",
+                                horizontal=True,
                             )
-                            topic_rows = topic_result.get("topics", [])
-                            if topic_rows:
-                                st.bar_chart(
-                                    topic_rows,
-                                    x="topic",
-                                    y="review_share",
-                                    horizontal=True,
+                            st.dataframe(
+                                [
+                                    {
+                                        t["topic"]: row.get("topic"),
+                                        "Count": row.get("count"),
+                                        t["review_share"]: (
+                                            f"{float(row.get('review_share', 0)):.1%}"
+                                        ),
+                                    }
+                                    for row in topic_rows
+                                ],
+                                use_container_width=True,
+                                hide_index=True,
+                            )
+                        sentiments = topic_result.get("sentiments", {})
+                        if sentiments:
+                            st.caption(t["sentiment_distribution"])
+                            st.json(sentiments)
+                    elif market_topics and market_topics.get("available"):
+                        market_rows = []
+                        for market, market_data in market_topics.get(
+                            "markets", {}
+                        ).items():
+                            for row in market_data.get("topics", []):
+                                market_rows.append(
+                                    {
+                                        t["market"]: market,
+                                        t["topic"]: row.get("topic"),
+                                        "Count": row.get("count"),
+                                        t["review_share"]: (
+                                            f"{float(row.get('review_share', 0)):.1%}"
+                                        ),
+                                    }
                                 )
-                                st.dataframe(
-                                    [
-                                        {
-                                            t["topic"]: row.get("topic"),
-                                            "Count": row.get("count"),
-                                            t["review_share"]: (
-                                                f"{float(row.get('review_share', 0)):.1%}"
-                                            ),
-                                        }
-                                        for row in topic_rows
-                                    ],
-                                    use_container_width=True,
-                                    hide_index=True,
-                                )
-                            sentiments = topic_result.get("sentiments", {})
-                            if sentiments:
-                                st.caption(t["sentiment_distribution"])
-                                st.json(sentiments)
-                        elif market_topics and market_topics.get("available"):
-                            market_rows = []
-                            for market, market_data in market_topics.get(
-                                "markets", {}
-                            ).items():
-                                for row in market_data.get("topics", []):
-                                    market_rows.append(
-                                        {
-                                            t["market"]: market,
-                                            t["topic"]: row.get("topic"),
-                                            "Count": row.get("count"),
-                                            t["review_share"]: (
-                                                f"{float(row.get('review_share', 0)):.1%}"
-                                            ),
-                                        }
-                                    )
-                            if market_rows:
-                                st.dataframe(
-                                    market_rows,
-                                    use_container_width=True,
-                                    hide_index=True,
-                                )
-                        else:
-                            st.info(t["topics_unavailable"])
+                        if market_rows:
+                            st.dataframe(
+                                market_rows,
+                                use_container_width=True,
+                                hide_index=True,
+                            )
+                    else:
+                        st.info(t["topics_unavailable"])
 
         with st.spinner(
             t["translating"]

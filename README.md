@@ -361,6 +361,11 @@ At Top 5, dense retrieval had the strongest recall and ranking quality. At Top 1
 The evaluated RAG system now includes a bounded, tool-using analytics Agent
 while keeping `/api/v1/analyze` compatible.
 
+The Streamlit UI has one analysis entry point: every question goes through the
+Agent endpoint, which selects the workflow automatically. Users do not need to
+choose RAG versus Agent mode. Ordinary questions still use evidence retrieval
+and grounded generation; the original RAG API remains compatible.
+
 The Agent endpoint is:
 
 ```http
