@@ -15,6 +15,18 @@ COMPARISON_TERMS = (
     "比較",
     "違い",
 )
+MARKET_SCOPE_TERMS = (
+    "across markets",
+    "different markets",
+    "by market",
+    "不同市场",
+    "各个市场",
+    "各市场",
+    "市場別",
+    "各市場",
+)
+MARKET_CONTEXT_TERMS = ("market", "markets", "市场", "市場")
+
 IMPROVEMENT_TERMS = (
     "prioritize",
     "priority",
@@ -86,13 +98,20 @@ def infer_markets(query: str) -> list[str]:
     return [
         market
         for market, aliases in MARKET_ALIASES.items()
-        if any(alias in normalized for alias in aliases)
+        if any(_contains_term(normalized, alias) for alias in aliases)
     ]
 
 
 def route_task(query: str) -> AgentTask:
     normalized = query.casefold()
-    if any(_contains_term(normalized, term) for term in COMPARISON_TERMS):
+    explicit_scope = any(
+        _contains_term(normalized, term) for term in MARKET_SCOPE_TERMS
+    )
+    comparison = any(_contains_term(normalized, term) for term in COMPARISON_TERMS)
+    market_context = len(infer_markets(query)) >= 2 or any(
+        _contains_term(normalized, term) for term in MARKET_CONTEXT_TERMS
+    )
+    if explicit_scope or (comparison and market_context):
         return "market_comparison"
     if any(_contains_term(normalized, term) for term in IMPROVEMENT_TERMS):
         return "improvement_planning"

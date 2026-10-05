@@ -374,6 +374,21 @@ It routes a request into one of four auditable task types:
 - market comparison;
 - improvement-priority planning.
 
+By default, planning uses multilingual keyword rules, not an LLM intent classifier.
+Market comparison requires a market-scope phrase (for example, “不同市场”,
+“across markets”, or “市場別”), or a comparison phrase with market context
+(explicit market wording or at least two recognized market names). Comparing
+rides alone does not trigger market comparison. Rules remain heuristic and can
+miss ambiguous phrasing. `ALADDIN_LLM_PLANNER_ENABLED=true` enables the optional
+validated LLM planner; failures fall back to rules.
+
+With no market filter, market comparison retrieves evidence separately from
+CN, HK, and KR and interleaves results within the evidence limit. Explicit UI
+filters take precedence over inferred filters. A market with no matching
+reviews contributes no evidence; coverage does not guarantee citation in the
+LLM answer. Topic counts use eligible AI-assisted labels, not retrieved sample
+frequency, and label quality remains subject to audit.
+
 The Agent can call deterministic review statistics, full-dataset topic
 distribution and market-comparison tools, evaluated Dense retrieval, evidence
 verification, and grounded generation. Its response includes the
