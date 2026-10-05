@@ -361,6 +361,11 @@ At Top 5, dense retrieval had the strongest recall and ranking quality. At Top 1
 The evaluated RAG system now includes a bounded, tool-using analytics Agent
 while keeping `/api/v1/analyze` compatible.
 
+The Streamlit UI has one analysis entry point: every question goes through the
+Agent endpoint, which selects the workflow automatically. Users do not need to
+choose RAG versus Agent mode. Ordinary questions still use evidence retrieval
+and grounded generation; the original RAG API remains compatible.
+
 The Agent endpoint is:
 
 ```http
@@ -373,6 +378,21 @@ It routes a request into one of four auditable task types:
 - complaint root-cause analysis;
 - market comparison;
 - improvement-priority planning.
+
+By default, planning uses multilingual keyword rules, not an LLM intent classifier.
+Market comparison requires a market-scope phrase (for example, “不同市场”,
+“across markets”, or “市場別”), or a comparison phrase with market context
+(explicit market wording or at least two recognized market names). Comparing
+rides alone does not trigger market comparison. Rules remain heuristic and can
+miss ambiguous phrasing. `ALADDIN_LLM_PLANNER_ENABLED=true` enables the optional
+validated LLM planner; failures fall back to rules.
+
+With no market filter, market comparison retrieves evidence separately from
+CN, HK, and KR and interleaves results within the evidence limit. Explicit UI
+filters take precedence over inferred filters. A market with no matching
+reviews contributes no evidence; coverage does not guarantee citation in the
+LLM answer. Topic counts use eligible AI-assisted labels, not retrieved sample
+frequency, and label quality remains subject to audit.
 
 The Agent can call deterministic review statistics, full-dataset topic
 distribution and market-comparison tools, evaluated Dense retrieval, evidence

@@ -214,3 +214,59 @@ def test_agent_falls_back_when_function_call_plan_is_invalid(monkeypatch) -> Non
         "fallback_used": True,
         "failure_type": "ValueError",
     }
+
+
+def test_implicit_market_comparison_routes_to_balanced_retrieval():
+    for query in (
+        "不同市场的游客关注哪些主题？",
+        "各市场的游客关注什么？",
+        "What topics do visitors discuss across markets?",
+        "Show topics by market",
+        "市場別に関心のあるテーマを教えて",
+    ):
+        assert route_task(query) == "market_comparison"
+    assert route_task("游客对不同游乐项目有什么评价？") == "evidence_qa"
+
+
+def test_comparison_requires_market_context():
+    for query in (
+        "比较两个游乐项目", "Compare two rides", "二つのアトラクションを比較して",
+        "Compare food and ticket prices in Korea",
+    ):
+        assert route_task(query) == "evidence_qa"
+    for query in (
+        "比较中国大陆和韩国游客", "Compare Korea and Hong Kong",
+        "韓国と香港の違いは？", "比较不同市场的投诉",
+    ):
+        assert route_task(query) == "market_comparison"
+    assert route_task("Compare complaints about two rides") == "root_cause_analysis"
+    assert infer_markets("Discuss chinaware") == []
+
+
+def test_market_retrieval_covers_available_markets_and_preserves_filters():
+    from app.agent.tools import ReviewTools
+
+    class RecordingTools(ReviewTools):
+        def __init__(self, empty=()):
+            self.calls = []
+            self.empty = empty
+
+        def search_reviews(self, query, filters, limit):
+            self.calls.append(dict(filters))
+            market = filters["regions"][0]
+            return ([{"review_id": f"{market}-{i}", "region": market}
+                     for i in range(limit)] if market not in self.empty else []), {}
+
+    filters = {"regions": [], "min_rating": 2, "max_rating": 4,
+               "date_from": "2025-01-01", "date_to": "2025-12-31"}
+    tools = RecordingTools()
+    evidence, _ = tools.search_reviews_by_market("不同市场的游客关注哪些主题？", filters, 5)
+    assert len(evidence) == 5
+    assert {r["region"] for r in evidence} == {"CN", "HK", "KR"}
+    assert all(all(call[k] == filters[k] for k in filters if k != "regions")
+               for call in tools.calls)
+    assert filters["regions"] == []
+    tools = RecordingTools(empty=("KR",))
+    evidence, _ = tools.search_reviews_by_market("compare markets", {"regions": ["HK", "KR"]}, 5)
+    assert [c["regions"] for c in tools.calls] == [["HK"], ["KR"]]
+    assert {r["region"] for r in evidence} == {"HK"}
